@@ -3,18 +3,17 @@
  * Smoke test: the app creates its subscription (events.app.subscribe) on the SDK's mock platform,
  * then the mock's delivery worker (deliverEvents) POSTs signed deliveries to the consumer running
  * on a local port: exactly once, retry after a handler failure, secret rotation. Attacks (wrong
- * secret, tampered body, forged header) are crafted by hand. mock-app-events.js adds Events'
- * developer-app rules in front of the mock (the SDK mock has no events.app.*). No network.
+ * secret, tampered body, forged header) are crafted by hand. The mock plays Events' developer-app
+ * rules (events.app.subscribe, own-project topics, public https endpoints). No network.
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createMockPlatform } = require('openvibe-sdk/testing');
-const { signDelivery } = require('openvibe-sdk/events');
+const { signDelivery, projectKey, appSource } = require('openvibe-sdk/events');
 const { createConsumer, loadConfig, openDatabase } = require('../server');
-const { createSubscription, loadConfig: loadSubscribeConfig, projectKey } = require('../subscribe');
-const { createAppEventsFetch } = require('./mock-app-events');
+const { createSubscription, loadConfig: loadSubscribeConfig } = require('../subscribe');
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = () => { throw new Error('network access in a smoke test'); };
@@ -23,7 +22,7 @@ const ENDPOINT = 'https://hooks.example.com/webhooks/openvibe';
 
 (async () => {
     const platform = createMockPlatform();
-    const fetch = createAppEventsFetch(platform);
+    const { fetch } = platform;
     const app = platform.addApp({ env: 'sandbox', grants: ['events.app.subscribe'] });
     const noGrant = platform.addApp({ env: 'sandbox', project: app.projectId, grants: ['events.app.read'] });
     const key = projectKey(app.projectId);
@@ -36,10 +35,11 @@ const ENDPOINT = 'https://hooks.example.com/webhooks/openvibe';
     assert.equal('secret' in created.subscription, false, 'the printable part never carries the secret');
     assert.match(created.secret, /^whsec_[0-9a-f]{64}$/);
     await assert.rejects(createSubscription(loadSubscribeConfig(subEnv), { endpoint: 'http://hooks.example.com/x' }, { fetch }), /https/);
-    await assert.rejects(createSubscription(loadSubscribeConfig(subEnv), { endpoint: ENDPOINT, topicPattern: 'app.pother.*' }, { fetch }),
-        (err) => err.status === 403 && err.code === 'events.topic_not_allowed');
-    await assert.rejects(createSubscription(loadSubscribeConfig(subEnv), { endpoint: ENDPOINT, topicPattern: '*' }, { fetch }),
-        (err) => err.code === 'events.topic_not_allowed');
+    const otherProject = platform.addApp({ env: 'sandbox', grants: ['events.app.subscribe'] }).projectId;
+    await assert.rejects(createSubscription(loadSubscribeConfig(subEnv), { endpoint: ENDPOINT, topicPattern: `app.${projectKey(otherProject)}.*` }, { fetch }),
+        /another project/, 'another project\'s topic is never even sent');
+    await assert.rejects(createSubscription(loadSubscribeConfig(subEnv), { endpoint: 'https://10.0.0.1/hooks' }, { fetch }),
+        (err) => err.status === 422 && err.code === 'events.endpoint_not_allowed', 'Events refuses private addresses');
     await assert.rejects(createSubscription(loadSubscribeConfig({ OV_CLIENT_ID: noGrant.id, OV_CLIENT_SECRET: noGrant.secret }), { endpoint: ENDPOINT }, { fetch }),
         (err) => err.code === 'invalid_scope', 'no events.app.subscribe grant: Network issues no token for it');
 
@@ -69,7 +69,7 @@ const ENDPOINT = 'https://hooks.example.com/webhooks/openvibe';
         return realFetch(local, init);
     };
     const appEvent = (name) => platform.publishEvent({
-        event_type: `app.${key}.${name}`, source: `app-${app.id.slice(4).toLowerCase()}`,
+        event_type: `app.${key}.${name}`, source: appSource(app.id),
         actor: { type: 'app', id: app.id }, subject: { type: 'order', id: '42' }, payload: { size: 12 },
     }, `app:${app.id}`);
 

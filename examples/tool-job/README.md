@@ -41,9 +41,10 @@ node --env-file=.env run-job.js ./photo.png
 npm test
 ```
 
-Network and Tools are `openvibe-sdk/testing`'s mock platform with `jobs` enabled (an `img.process`
-handler plays queued → running → progress → succeeded); `dropJobStreams()` cuts the event stream
-after the first event.
+Network and Tools are `openvibe-sdk/testing`'s mock platform with `jobs` enabled, answering at
+`https://img.openvibe.tools` like the real satellite (an `img.process` handler plays queued →
+running → progress → succeeded; `acceptSandbox: ['openvibe.tools']` because Tools accepts sandbox
+app tokens on jobs); `dropJobStreams()` cuts the event stream after the first event.
 
 ## Run it against the real platform
 

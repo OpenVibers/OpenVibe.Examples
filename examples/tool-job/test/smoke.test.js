@@ -38,7 +38,7 @@ const TOOLS = ['tools.job.create', 'tools.job.read'];
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-tooljob-'));
     const file = path.join(dir, 'photo.png');
     fs.writeFileSync(file, Buffer.from('not really a png, the mock does not care'));
-    const env = { OV_CLIENT_ID: app.id, OV_CLIENT_SECRET: app.secret, OV_TOOLS_JOBS_URL: platform.origins.tools, OV_OUT_DIR: path.join(dir, 'out'), OV_JOB_STATE: path.join(dir, 'state.json') };
+    const env = { OV_CLIENT_ID: app.id, OV_CLIENT_SECRET: app.secret, OV_OUT_DIR: path.join(dir, 'out'), OV_JOB_STATE: path.join(dir, 'state.json') };
     const submits = () => platform.stats.requests.filter((r) => r.method === 'POST' && r.url.endsWith('/api/v1/jobs')).length;
     const streams = () => platform.stats.requests.filter((r) => r.url.endsWith('/events'));
 
@@ -58,6 +58,7 @@ const TOOLS = ['tools.job.create', 'tools.job.read'];
     assert.equal(fs.readFileSync(files[0], 'utf8'), 'converted:not really a png, the mock does not care');
     assert.equal(fs.existsSync(env.OV_JOB_STATE), false, 'state cleared once done');
     assert.equal(submits(), 1);
+    assert.ok(platform.stats.requests.some((r) => r.url === 'https://img.openvibe.tools/api/v1/jobs'), 'img.process went to the img satellite (the default)');
     const submitCall = platform.stats.requests.find((r) => r.method === 'POST' && r.url.endsWith('/api/v1/jobs'));
     assert.match(submitCall.headers['idempotency-key'], /^ex-[0-9a-f]{40}$/);
 

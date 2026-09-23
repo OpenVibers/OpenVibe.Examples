@@ -15,9 +15,12 @@ OV_EVENTS_MODE=realtime OV_TOPICS=chat.message.created node subscriber.js   # pu
 - **Your own topic.** A developer app publishes and reads `app.<project_key>.<name…>`, where
   `project_key` is `p` followed by the project's ULID in lowercase (`prj_01JAB…` → `p01jab…`), and
   its events carry `source: app-<app ULID in lowercase>` and `actor: { type: 'app', id: <app id> }`.
-  `publish.js` builds exactly that with `openvibe-sdk/events` `publish()` (which fills `event_id`,
-  `timestamp`, `version` and `trace_id`; a repeated `event_id` is answered as a duplicate, so
-  retries are safe). Events refuses another project's `app.*` topic (`403 events.topic_not_allowed`).
+  `openvibe-sdk/events` `createAppEvents({ projectId, appId })` fills all of that in: event types
+  and topic patterns are written relative to the project (`order.created`, `order.*`, `*`), and
+  `publish()` adds `event_id`, `timestamp`, `version` and `trace_id` (a repeated `event_id` is
+  answered as a duplicate, so retries are safe). Another project's `app.*` topic is refused by the
+  SDK before anything is sent (and by Events with `403 events.topic_not_allowed`).
+  `OV_PLATFORM_TOPICS` adds public first-party topics (`live.stream.*`) to a pull.
 - **Pull** (`openvibe-sdk/events` `iterate()`): pages from the saved cursor to the head. The
   cursor is saved after each handled event, and moved past non-matching events (the page's
   `next_after_seq`) in `onPage`, which the SDK calls only after every item of that page was
@@ -35,10 +38,9 @@ OV_EVENTS_MODE=realtime OV_TOPICS=chat.message.created node subscriber.js   # pu
 
 | File | What |
 |---|---|
-| `subscriber.js` | `createSubscriber()` (`start()`, `stop()`, `pullOnce()`, `resolveTopics()`), `createCursorStore()`, `projectKey()`, `appSource()` |
+| `subscriber.js` | `createSubscriber()` (`start()`, `stop()`, `pullOnce()`, `resolveTopics()`), `createCursorStore()` |
 | `publish.js` | `publishAppEvent()`: one event on your project's topic |
-| `test/mock-app-events.js` | Events' developer-app rules in front of the SDK mock (see below) |
-| `test/smoke.test.js` | publish, pull with cursor and failure, pull gap after pruning, topic scope, anonymous realtime, reconnect, restart, cursor-ahead gap |
+| `test/smoke.test.js` | publish, pull with cursor and failure, pull gap after pruning, platform topics, topic scope, anonymous realtime, reconnect, restart, cursor-ahead gap |
 
 ## Run the smoke test
 
@@ -46,11 +48,10 @@ OV_EVENTS_MODE=realtime OV_TOPICS=chat.message.created node subscriber.js   # pu
 npm test
 ```
 
-Network and Events are `openvibe-sdk/testing`'s mock platform; retention gaps come from its
-`pruneEvents()`. The SDK 0.3.0 mock's Events only knows the first-party capabilities
-(`events.event.read`, …), so `test/mock-app-events.js` checks an app token's `events.app.*`
-capability, the `app.<project_key>.` prefix, the `app-<ULID>` source and the topic scope the way
-Events does, then hands the call to the mock. It does not model sandbox/production separation.
+Network and Events are `openvibe-sdk/testing`'s mock platform, which plays Events'
+developer-app rules (`events.app.*` capabilities, the `app.<project_key>.` prefix, the
+`app-<ULID>` source, own-project and own-environment reads, no app events on realtime);
+retention gaps come from its `pruneEvents()`.
 
 ## Run it against the real platform
 
@@ -65,8 +66,8 @@ Things to know:
 
 - Pull goes to `https://events.openvibe.network/api/v1/events` (the origin comes from the registry).
   You see your project's events in your app's environment only: a sandbox app never sees production
-  events and the other way round. Adding a first-party pattern such as `live.stream.*` to
-  `OV_TOPICS` returns only that namespace's `public` events.
+  events and the other way round. A first-party pattern in `OV_PLATFORM_TOPICS`, such as
+  `live.stream.*`, returns only that namespace's `public` events.
 - Realtime never streams `app.*` events, to anyone; use pull (or a webhook, see
   [webhook-consumer](../webhook-consumer)) for your own events. Anonymous realtime shows public
   first-party events only; which ones arrive depends on which producers publish public events.

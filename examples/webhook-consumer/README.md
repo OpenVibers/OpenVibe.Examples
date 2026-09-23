@@ -11,8 +11,9 @@ node --env-file=.env --env-file=.env.webhook server.js                          
 ## What it proves
 
 - **An app subscription** (`events.app.subscribe`): `subscribe.js` creates it with
-  `openvibe-sdk/events` `subscriptions.create()`. The default topic is the project's own
-  `app.<project_key>.*`; Events refuses `*`, `app.*` and other projects' keys
+  `openvibe-sdk/events` `createAppEvents().subscriptions.create()`, whose topic pattern is relative
+  to the project (default `*`, i.e. `app.<project_key>.*`). Events refuses `*`, `app.*` and other
+  projects' keys
   (`403 events.topic_not_allowed`), and accepts only `https` endpoints that resolve to public
   addresses. `subscribe.js` generates the signing secret itself and writes it to `.env.webhook`
   (mode 0600); it never prints it.
@@ -32,7 +33,6 @@ node --env-file=.env --env-file=.env.webhook server.js                          
 |---|---|
 | `server.js` | `createConsumer()`: the HTTP endpoint, signature check, inbox, `received_events` table |
 | `subscribe.js` | `createSubscription()`: create the Events subscription with an app token |
-| `test/mock-app-events.js` | Events' developer-app rules in front of the SDK mock (same file as in event-subscriber) |
 | `test/smoke.test.js` | subscription and its topic/endpoint rules, then deliveries from the mock's delivery worker |
 
 ## Run the smoke test
@@ -44,8 +44,8 @@ npm test
 Deliveries come from `openvibe-sdk/testing`'s delivery worker (`deliverEvents()`): signed POSTs
 with Events' headers, in order, retried on a non-2xx. The test routes the subscription's https
 endpoint to the consumer on a local port. Wrong-secret, tampered and forged deliveries are made by
-hand. The SDK 0.3.0 mock has no `events.app.*`, so `test/mock-app-events.js` plays Events' app
-rules (capability, topic scope, https endpoint) in front of it.
+hand. The mock plays Events' developer-app rules (capability, own-project topics, public https
+endpoints: a private address is `422 events.endpoint_not_allowed`).
 
 ## Run it against the real platform
 

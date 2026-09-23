@@ -1,18 +1,18 @@
 'use strict';
 /**
  * Smoke test: publish to the project's own topic, pull it with a durable cursor as the app, gap
- * handling after retention, and anonymous realtime with resume. Network, Events (incl.
- * /realtime/stream) are openvibe-sdk/testing's mock platform; mock-app-events.js adds Events'
- * developer-app rules in front of it (the SDK mock has no events.app.*). No network.
+ * handling after retention, and anonymous realtime with resume. Network and Events (incl.
+ * /realtime/stream and Events' developer-app rules) are openvibe-sdk/testing's mock platform.
+ * No network.
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createMockPlatform } = require('openvibe-sdk/testing');
-const { createSubscriber, loadConfig, createCursorStore, projectKey, appSource } = require('../subscriber');
+const { projectKey, appSource } = require('openvibe-sdk/events');
+const { createSubscriber, loadConfig, createCursorStore } = require('../subscriber');
 const { publishAppEvent, loadConfig: loadPublishConfig } = require('../publish');
-const { createAppEventsFetch } = require('./mock-app-events');
 
 globalThis.fetch = () => { throw new Error('network access in a smoke test'); };
 
@@ -35,7 +35,7 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
 (async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-subscriber-'));
     const platform = createMockPlatform();
-    const fetch = createAppEventsFetch(platform);
+    const { fetch } = platform;
     // A sandbox app (the default for a new project) with the events grants, and one of another project.
     const app = platform.addApp({ env: 'sandbox', grants: ['events.app.publish', 'events.app.read'] });
     const other = platform.addApp({ env: 'sandbox', grants: ['events.app.publish', 'events.app.read'] });
@@ -108,9 +108,23 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
     assert.deepEqual(resyncs, [{ from_seq: a.seq + 1, to_seq: c.seq, via: 'pull' }]);
     assert.deepEqual(seen, [d.seq, e.seq, f.seq]);
 
-    // Another project's topic is refused by Events; so is a pull without events.app.read.
+    // Public first-party topics can be added (the earlier one was pruned: publish another).
+    platform.publishEvent(firstParty('public', 'live.stream.started'));
+    platform.publishEvent(firstParty('internal', 'live.stream.ended'));       // internal: never to an app
+    const withPlatform = [];
+    s = createSubscriber(loadConfig({ ...env, OV_TOPICS: 'order.*', OV_PLATFORM_TOPICS: 'live.stream.*', OV_CURSOR_PATH: path.join(dir, 'platform.json') }), {
+        fetch, log: quiet, onEvent: (ev) => { withPlatform.push(ev.event_type); },
+    });
+    assert.deepEqual(await s.resolveTopics(), [`app.${key}.order.*`, 'live.stream.*']);
+    await s.pullOnce();
+    assert.ok(withPlatform.includes('live.stream.started'), 'public first-party events as well');
+    assert.ok(!withPlatform.includes('live.stream.ended'), 'but never internal ones');
+    assert.ok(withPlatform.every((t) => t === 'live.stream.started' || t.startsWith(`app.${key}.order.`)), 'only the asked-for topics');
+
+    // Another project's topic is refused (the SDK refuses to build it; Events would answer 403);
+    // so is a pull without events.app.read.
     s = createSubscriber(loadConfig({ ...pullEnv, OV_TOPICS: `app.${projectKey(other.projectId)}.*` }), { fetch, log: quiet, onEvent() {} });
-    await assert.rejects(s.pullOnce(), (err) => err.status === 403 && err.code === 'events.topic_not_allowed');
+    await assert.rejects(s.pullOnce(), /another project/);
     s = createSubscriber(loadConfig({ ...pullEnv, OV_CLIENT_ID: publishOnly.id, OV_CLIENT_SECRET: publishOnly.secret }), { fetch, log: quiet, onEvent() {} });
     await assert.rejects(s.pullOnce(), (err) => err.status === 403 && err.code === 'capability.denied');
 

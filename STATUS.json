@@ -4,9 +4,9 @@
   "code": true,
   "wave": "W20",
   "version": "0.2.0",
-  "sdk": "openvibe-sdk v0.3.0",
-  "contracts": "openvibe-contracts v0.26.0 (mod-manifest example)",
-  "ci": "every example's smoke test runs on Node 22.22.1 against openvibe-sdk/testing's mock platform plus two documented stand-ins (Events app rules, Chat WebSocket); none reaches the network",
+  "sdk": "openvibe-sdk v0.3.1",
+  "contracts": "openvibe-contracts v0.28.0 (mod-manifest example)",
+  "ci": "every example's smoke test runs on Node 22.22.1 against openvibe-sdk/testing's mock platform (developer-app rules for Events, Media and Tools as in production) plus a local Chat WebSocket mock; none reaches the network",
   "e2e": "npm run e2e runs media-uploader, event-subscriber (pull) and tool-job against the real platform with a sandbox app's OV_CLIENT_ID/OV_CLIENT_SECRET/OV_PROJECT_ID; on demand only, not in CI or npm test; not run against production as part of this release",
   "platform": "sandbox developer path (projects, sandbox grants, app tokens for openvibe.media/events/tools, Media project tenant, Events app.<project_key>.* events, Tools jobs, CORS-open discovery) verified in production on 2026-09-23 by the platform's W20 exit check",
   "not_working": [

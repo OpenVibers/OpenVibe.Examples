@@ -6,15 +6,15 @@ Upload a file to OpenVibe.Media as a developer app, read it back and delete it, 
 ```bash
 node --env-file=.env upload.js ./logo.png
 # {
-#   "key": "3f2a9c0d1b7e-logo.png",
-#   "url": "https://openvibe.media/f/3f2a9c0d1b7e-logo.png?exp=…&sig=…",
+#   "key": "3f2a9c0d1b7e-5d0c11aa-logo.png",
+#   "url": "https://openvibe.media/f/3f2a9c0d1b7e-5d0c11aa-logo.png?exp=…&sig=…",
 #   "url_expires_at": "2026-…",
 #   "sandbox": true,
 #   "size": 5120, "mime": "image/png", "sha256": "…", "deduplicated": false,
 #   "project_id": "prj_…", "contracts": "0.28.0"
 # }
-node --env-file=.env upload.js --get 3f2a9c0d1b7e-logo.png
-node --env-file=.env upload.js --delete 3f2a9c0d1b7e-logo.png
+node --env-file=.env upload.js --get 3f2a9c0d1b7e-5d0c11aa-logo.png
+node --env-file=.env upload.js --delete 3f2a9c0d1b7e-5d0c11aa-logo.png
 ```
 
 ## What it proves
@@ -39,7 +39,7 @@ node --env-file=.env upload.js --delete 3f2a9c0d1b7e-logo.png
 | File | What |
 |---|---|
 | `upload.js` | `loadConfig()`, `createUploader()` (`upload`, `get`, `remove`), `describe()`, `explain()` (hints for the usual errors), CLI |
-| `test/smoke.test.js` | upload against `openvibe-sdk/testing` (fake Network + Media), with a sandbox app |
+| `test/smoke.test.js` | upload, signed URL, read back, delete, and the refusals, against `openvibe-sdk/testing` with a sandbox app |
 
 ## Run the smoke test
 
@@ -47,11 +47,10 @@ node --env-file=.env upload.js --delete 3f2a9c0d1b7e-logo.png
 npm test          # from this folder, or `npm test -- media` from the repository root
 ```
 
-No network: Network and Media are the SDK's in-process mock, with real RS256 tokens and the same
-audience, capability, namespace and sandbox checks. `--get` and `--delete` are not covered there:
-the SDK 0.3.0 mock's Media accepts app tokens on upload only, while the real Media accepts
-`media.object.read` for reads. `npm run e2e` at the repository root runs all three against the
-platform.
+No network: Network and Media are the SDK's in-process mock, with real RS256 tokens and Media's
+tenant rules: the project id addresses the tenant, the token's env picks `prj_…` or
+`prj_…-sandbox`, uploads and deletes need `media.object.upload`, reads `media.object.read`, and a
+sandbox file answers with a signed `url` that its `/f/<key>` serves only with the signature.
 
 ## Run it against the real platform
 

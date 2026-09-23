@@ -12,7 +12,6 @@ jobs:
         with:
           node-version: 22.22.1   # the Node version the platform's services run
       - run: npm ci             # one install for every example (npm workspaces)
-      # Every example's smoke test runs against openvibe-sdk/testing's mock platform and two small
-      # documented stand-ins (Events' app rules, Chat WebSocket). No test reaches the network or a
-      # real service. `npm run e2e` (the real platform, needs credentials) is never run here.
+      # Every example's smoke test runs against openvibe-sdk/testing's mock platform (and a small
+      # Chat WebSocket mock for chat-bot). No test reaches the network or a real service. `npm run e2e` (the real platform, needs credentials) is never run here.
       - run: npm test

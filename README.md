@@ -7,8 +7,8 @@
 Node 22.22.1 against `openvibe-sdk/testing`'s mock platform (no network). `npm run e2e` runs three
 of them (Media, Events pull, a Tools job) against the real platform with your own sandbox app; it
 is not part of CI or `npm test`, and it was not run against production as part of this release.  
-**Built on:** [openvibe-sdk v0.3.0](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.3.0), and
-openvibe-contracts v0.26.0 for the mod manifest.  
+**Built on:** [openvibe-sdk v0.3.1](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.3.1), and
+openvibe-contracts v0.28.0 for the mod manifest.  
 **Plan:** OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §15.1
 and §18.9; roadmap Wave 20, §30 (public SDK surface), ADR-014 (developer projects).  
 **License:** MIT ([LICENSE](LICENSE)), so you can copy any example into your own project. The
@@ -21,8 +21,8 @@ OpenVibe services themselves are AGPL-3.0.
 | [browser-app](examples/browser-app) | A plain page (no build step) imports the SDK's browser bundle, reads the registry cross-origin and signs in with PKCE; a public app needs no secret | `openvibe-sdk/browser/openvibe-sdk.mjs`, `/auth` (`exchangeCode`, `verifyAppToken`) |
 | [node-server-app](examples/node-server-app) | Client-credentials app token per audience and what it carries, registry discovery, contracts version check, trace propagation | `openvibe-sdk/auth` (`getTokenInfo`), `/registry`, `/core` |
 | [media-uploader](examples/media-uploader) | Upload into, read from and delete in your project's Media tenant; sandbox files come back with signed URLs | `openvibe-sdk/media` |
-| [event-subscriber](examples/event-subscriber) | Publish to your project's topic `app.<project_key>.*`, pull it with a durable cursor, gaps; anonymous realtime for public events | `openvibe-sdk/events`, `/realtime` |
-| [webhook-consumer](examples/webhook-consumer) | An app subscription on your own topic; `X-OpenVibe-Signature` verified on the raw body; exactly-once handling with an inbox; secret rotation | `openvibe-sdk/events` (`subscriptions.create`, `parseDelivery`, `createInbox`) |
+| [event-subscriber](examples/event-subscriber) | Publish to your project's topic `app.<project_key>.*`, pull it with a durable cursor, gaps; anonymous realtime for public events | `openvibe-sdk/events` (`createAppEvents`), `/realtime` |
+| [webhook-consumer](examples/webhook-consumer) | An app subscription on your own topic; `X-OpenVibe-Signature` verified on the raw body; exactly-once handling with an inbox; secret rotation | `openvibe-sdk/events` (`createAppEvents`, `parseDelivery`, `createInbox`) |
 | [tool-job](examples/tool-job) | An OpenVibe.Tools job submitted once (idempotency key), reattached after a restart, its SSE stream resumed with `Last-Event-ID` | `openvibe-sdk/jobs` |
 | [oauth-app](examples/oauth-app) | Authorization code + PKCE for a confidential app, exchange on the server, offline app-token verification, session hygiene | `openvibe-sdk/auth` |
 | [chat-bot](examples/chat-bot) | A bot on Chat's WebSocket protocol that stays in its one configured room and always identifies as a bot | Chat `/ws/chat` protocol (no SDK client: Chat is first-party) |
@@ -86,7 +86,7 @@ at the root one: `node --env-file=../../.env upload.js ./logo.png`.
 |---|---|---|---|
 | [node-server-app](examples/node-server-app) | confidential | any | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, `OV_AUDIENCES` |
 | [media-uploader](examples/media-uploader) | confidential | `media.object.upload`, `media.object.read` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, optional `OV_PROJECT_ID` |
-| [event-subscriber](examples/event-subscriber) | confidential | `events.app.publish`, `events.app.read` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, optional `OV_PROJECT_ID`, `OV_TOPICS`; realtime: `OV_EVENTS_MODE=realtime`, `OV_TOPICS` only |
+| [event-subscriber](examples/event-subscriber) | confidential | `events.app.publish`, `events.app.read` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, optional `OV_PROJECT_ID`, `OV_TOPICS`, `OV_PLATFORM_TOPICS`; realtime: `OV_EVENTS_MODE=realtime`, `OV_TOPICS` only |
 | [webhook-consumer](examples/webhook-consumer) | confidential | `events.app.subscribe` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`; the consumer: `OV_WEBHOOK_SECRET` (written by `subscribe.js`); a public https host |
 | [tool-job](examples/tool-job) | confidential | `tools.job.create`, `tools.job.read` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, optional `OV_TOOLS_JOBS_URL`, `OV_JOB_TYPE`, `OV_JOB_INPUT` |
 | [oauth-app](examples/oauth-app) | confidential, redirect `http://localhost:3009/callback` | every capability in `OV_SCOPE` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, `OV_AUDIENCE`, `OV_SCOPE` |
@@ -147,11 +147,12 @@ How the tests stay offline:
 
 - Network, Events, Media and Tools jobs are `createMockPlatform()` from `openvibe-sdk/testing`: an
   in-process fake at the real public origins, with real RS256 tokens, developer apps and projects,
-  sandbox refusal unless a service opts in, `/oauth/authorize` with auto-consent, retention gaps
+  sandbox handling per service, `/oauth/authorize` with auto-consent, retention gaps
   (`pruneEvents()`), a delivery worker (`deliverEvents()`) and Tools jobs with SSE.
-- Where the mock falls short, a small documented stand-in in the example's `test/` folder fills
-  in: `mock-app-events.js` (Events' `events.app.*` rules, in event-subscriber and
-  webhook-consumer) and `mock-chat-server.js` (Chat's WebSocket, which the SDK does not mock).
+- The mock plays the developer-app rules the way production does: Events' `events.app.*`
+  (own-project topics, `app-<ULID>` sources, env separation), Media's project tenants (`prj_…` and
+  `prj_…-sandbox`, signed URLs for sandbox files) and Tools at its satellites' origins.
+- Chat is the only service the SDK does not mock: chat-bot carries `test/mock-chat-server.js`.
 - Every smoke test replaces the global `fetch` with one that throws, so an accidental real network
   call fails the test.
 
@@ -162,7 +163,7 @@ Repository checks (`test/`):
   value in a `.env.example`.
 - `structure.test.js` checks the nine examples are complete and copyable: README with "What it
   proves" and "Run it against the real platform", a `.env.example` that names every variable the
-  code reads, MIT license, `openvibe-sdk` pinned to the v0.3.0 tag, no `file:` links; and that
+  code reads, MIT license, `openvibe-sdk` pinned to the v0.3.1 tag, no `file:` links; and that
   `npm run e2e` is outside CI and `npm test` and refuses to start without its variables.
 
 ## Layout
@@ -189,14 +190,14 @@ test/public-surface.test.js, test/structure.test.js
 
 ## Depends on
 
-- OpenVibe.SDK (v0.3.0), OpenVibe.Contracts (v0.26.0, mod manifest only)
+- OpenVibe.SDK (v0.3.1), OpenVibe.Contracts (v0.28.0, mod manifest only)
 - at run time against the real platform: Network (tokens, registry, developer projects), Events,
   Media, Tools, Chat (on openvibe.live)
 
 ## Acceptance
 
-- CI runs every example: **yes**, against the SDK's mock platform and two small documented
-  stand-ins (no network). Against the real platform on demand: `npm run e2e` with a sandbox app's
+- CI runs every example: **yes**, against the SDK's mock platform (and a small Chat WebSocket
+  mock for chat-bot; no network). Against the real platform on demand: `npm run e2e` with a sandbox app's
   credentials; there is no CI project with credentials.
 - A new developer goes from account creation to a working Media, event and capability
   integration using only public documentation, the SDK and scoped credentials: the platform path

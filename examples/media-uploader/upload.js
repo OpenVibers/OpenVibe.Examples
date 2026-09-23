@@ -51,7 +51,7 @@ function describe(file) {
     if (!file) return null;
     return {
         key: file.key,
-        url: file.public_url || file.url || null,          // public URL, or a signed one for sandbox files
+        url: file.public_url || file.signed_url || null,  // public URL, or a signed one for sandbox files
         url_expires_at: file.url_expires_at || null,
         sandbox: Boolean(file.sandbox),
         size: file.size, mime: file.mime, sha256: file.sha256,

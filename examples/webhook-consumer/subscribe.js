@@ -4,7 +4,7 @@
  * Create the OpenVibe.Events subscription that delivers to this consumer.
  *
  *   node --env-file=.env subscribe.js https://hooks.example.com/webhooks/openvibe            # app.<project_key>.*
- *   node --env-file=.env subscribe.js https://hooks.example.com/webhooks/openvibe 'app.<project_key>.order.*'
+ *   node --env-file=.env subscribe.js https://hooks.example.com/webhooks/openvibe 'order.*'     # app.<project_key>.order.*
  *
  * Needs an app token for openvibe.events holding events.app.subscribe. Events accepts, for an app:
  *   - topic patterns that start with a literal segment; an app.* pattern must name YOUR project
@@ -20,14 +20,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createClient, isOpenVibeError } = require('openvibe-sdk/core');
 const { createServiceTokenClient } = require('openvibe-sdk/auth');
-const { createEventsClient } = require('openvibe-sdk/events');
-
-/** `p` + the project's ULID in lowercase (the second segment of your app event types). */
-function projectKey(projectId) {
-    const m = /^prj_([0-9A-HJKMNP-TV-Z]{26})$/i.exec(String(projectId || ''));
-    if (!m) throw Object.assign(new TypeError(`not a project id: ${projectId}`), { code: 'config.invalid' });
-    return `p${m[1].toLowerCase()}`;
-}
+const { createAppEvents } = require('openvibe-sdk/events');
 
 function loadConfig(env = process.env) {
     const missing = ['OV_CLIENT_ID', 'OV_CLIENT_SECRET'].filter((k) => !env[k]);
@@ -47,7 +40,8 @@ function loadConfig(env = process.env) {
 
 /**
  * -> { subscription: { id, topic_pattern, endpoint, enabled }, secret } (the secret is kept out of
- * the printable part). `topicPattern` defaults to the project's own app.<project_key>.*.
+ * the printable part). `topicPattern` is relative to the project (`order.*`; default `*`, i.e.
+ * app.<project_key>.*); createAppEvents() turns it into the full pattern.
  */
 async function createSubscription(config, { endpoint, topicPattern, secret = `whsec_${crypto.randomBytes(32).toString('hex')}` }, { fetch } = {}) {
     let u;
@@ -58,13 +52,9 @@ async function createSubscription(config, { endpoint, topicPattern, secret = `wh
         scope: { 'openvibe.events': 'events.app.subscribe' },
     });
     const client = createClient({ network: config.network, fetch, tokenProvider: tokens, baseUrls: config.eventsUrl ? { events: config.eventsUrl } : undefined });
-    let pattern = topicPattern;
-    if (!pattern) {
-        const projectId = config.projectId || (await tokens.getTokenInfo({ audience: 'openvibe.events' })).unverifiedClaims.project_id;
-        pattern = `app.${projectKey(projectId)}.*`;
-    }
-    const events = createEventsClient(client);
-    const sub = await events.subscriptions.create({ topicPattern: pattern, endpoint, secret });
+    const projectId = config.projectId || (await tokens.getTokenInfo({ audience: 'openvibe.events' })).unverifiedClaims.project_id;
+    const events = createAppEvents(client, { projectId, appId: config.clientId });
+    const sub = await events.subscriptions.create({ topicPattern: topicPattern || '*', endpoint, secret });
     return { subscription: { id: sub.id, topic_pattern: sub.topic_pattern, endpoint: sub.endpoint, enabled: sub.enabled }, secret: sub.secret || secret };
 }
 
@@ -91,4 +81,4 @@ async function main([endpoint, topicPattern] = process.argv.slice(2)) {
 
 if (require.main === module) main().then((code) => { process.exitCode = code; });
 
-module.exports = { loadConfig, createSubscription, projectKey, main };
+module.exports = { loadConfig, createSubscription, main };

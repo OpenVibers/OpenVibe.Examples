@@ -7,10 +7,11 @@
  *
  * Two ways in, one cursor discipline:
  *
- *   pull      GET /api/v1/events through openvibe-sdk/events iterate(), from the saved cursor, as
- *             your developer app (events.app.read, audience openvibe.events). The default topic is
- *             your project's own events, app.<project_key>.*; add public first-party topics
- *             (live.stream.*) if you want those too. Another project's app.* topics are refused.
+ *   pull      GET /api/v1/events through openvibe-sdk/events createAppEvents().iterate(), from the
+ *             saved cursor, as your developer app (events.app.read, audience openvibe.events).
+ *             OV_TOPICS are relative to your project (`order.*`; default `*`, i.e. all of
+ *             app.<project_key>.*); OV_PLATFORM_TOPICS adds public first-party topics
+ *             (live.stream.*). Another project's app.* topics are refused.
  *   realtime  GET /realtime/stream (SSE) through openvibe-sdk/realtime subscribe(), anonymously:
  *             public first-party events only. Events never streams app.* events over realtime.
  *             Resumes with Last-Event-ID from the saved cursor after a restart or a drop.
@@ -28,22 +29,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createClient, isOpenVibeError } = require('openvibe-sdk/core');
 const { createServiceTokenClient } = require('openvibe-sdk/auth');
-const { createEventsClient } = require('openvibe-sdk/events');
+const { createAppEvents, projectKey, appSource } = require('openvibe-sdk/events');
 const { subscribe } = require('openvibe-sdk/realtime');
-
-/** `p` + the project's ULID in lowercase: the second segment of your app event types. */
-function projectKey(projectId) {
-    const m = /^prj_([0-9A-HJKMNP-TV-Z]{26})$/i.exec(String(projectId || ''));
-    if (!m) throw Object.assign(new TypeError(`not a project id: ${projectId}`), { code: 'config.invalid' });
-    return `p${m[1].toLowerCase()}`;
-}
-
-/** `app-` + the app's ULID in lowercase: the `source` of the events your app publishes. */
-function appSource(appId) {
-    const m = /^(?:app:)?app_([0-9A-HJKMNP-TV-Z]{26})$/i.exec(String(appId || ''));
-    if (!m) throw Object.assign(new TypeError(`not an app id: ${appId}`), { code: 'config.invalid' });
-    return `app-${m[1].toLowerCase()}`;
-}
 
 function loadConfig(env = process.env) {
     const mode = env.OV_EVENTS_MODE || 'pull';
@@ -52,7 +39,8 @@ function loadConfig(env = process.env) {
     if (mode === 'pull' && !hasCreds) {
         throw Object.assign(new Error('pull mode needs OV_CLIENT_ID and OV_CLIENT_SECRET (see .env.example)'), { code: 'config.missing' });
     }
-    const topics = String(env.OV_TOPICS || '').split(',').map((t) => t.trim()).filter(Boolean);
+    const list = (v) => String(v || '').split(',').map((t) => t.trim()).filter(Boolean);
+    const topics = list(env.OV_TOPICS);
     if (mode === 'realtime' && !topics.length) {
         throw Object.assign(new Error('realtime mode needs OV_TOPICS (public first-party topics, e.g. chat.message.created)'), { code: 'config.missing' });
     }
@@ -63,7 +51,8 @@ function loadConfig(env = process.env) {
         clientSecret: env.OV_CLIENT_SECRET || null,
         projectId: env.OV_PROJECT_ID || null,
         eventsUrl: env.OV_EVENTS_URL || null,
-        topics,                                         // empty in pull mode: your project's app.<project_key>.*
+        topics,                                         // pull: project-relative (empty = '*'); realtime: first-party
+        platformTopics: list(env.OV_PLATFORM_TOPICS),   // pull only: public first-party topics as well
         cursorPath: env.OV_CURSOR_PATH || path.join(__dirname, 'data', 'cursor.json'),
         pollMs: Number(env.OV_POLL_MS || 5000),
     };
@@ -108,26 +97,32 @@ function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = c
         await onResync(g, { via });
     }
 
-    /** OV_TOPICS, or your project's own topic app.<project_key>.* (project id from OV_PROJECT_ID or the token). */
-    let topics = config.topics.length ? config.topics : null;
-    async function resolveTopics() {
-        if (topics) return topics;
+    /** The app-scoped events client: the project id comes from OV_PROJECT_ID or the app token. */
+    let appEvents = null;
+    async function eventsForApp() {
+        if (appEvents) return appEvents;
         let projectId = config.projectId;
         if (!projectId) {
             const info = await tokens.getTokenInfo({ audience: 'openvibe.events' });   // decoded, not verified: fine for naming
             projectId = info.unverifiedClaims && info.unverifiedClaims.project_id;
         }
-        topics = [`app.${projectKey(projectId)}.*`];
-        return topics;
+        appEvents = createAppEvents(client, { projectId, appId: config.clientId });
+        return appEvents;
+    }
+    /** The full topic patterns a pull reads: app.<project_key>.<OV_TOPICS or *>, plus OV_PLATFORM_TOPICS. */
+    async function resolveTopics() {
+        const ev = await eventsForApp();
+        return [...(config.topics.length ? config.topics : ['*']).map(ev.topic), ...config.platformTopics];
     }
 
     // ── pull ────────────────────────────────────────────────
-    const events = createEventsClient(client);
     /** Read from the saved cursor to the head once. Returns the number of events handled. */
     async function pullOnce({ limit = 100 } = {}) {
+        const ev = await eventsForApp();
         let handled = 0;
-        const iterator = events.iterate({
-            topic: await resolveTopics(),
+        const iterator = ev.iterate({
+            topic: config.topics.length ? config.topics : '*',
+            platformTopics: config.platformTopics,
             afterSeq: cursor.get('pull') || 0,
             limit,
             onGap: (g) => gap(g, 'pull'),
@@ -219,4 +214,4 @@ if (require.main === module) {
     process.on('SIGTERM', stop);
 }
 
-module.exports = { loadConfig, createCursorStore, createSubscriber, projectKey, appSource };
+module.exports = { loadConfig, createCursorStore, createSubscriber };

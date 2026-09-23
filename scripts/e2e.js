@@ -68,7 +68,8 @@ async function main() {
     maskOutput(env.OV_CLIENT_SECRET);
 
     const { createUploader, explain } = require(path.join(ROOT, 'examples/media-uploader/upload'));
-    const { createSubscriber, createCursorStore, loadConfig: subscriberConfig, projectKey } = require(path.join(ROOT, 'examples/event-subscriber/subscriber'));
+    const { projectKey } = require('openvibe-sdk/events');
+    const { createSubscriber, createCursorStore, loadConfig: subscriberConfig } = require(path.join(ROOT, 'examples/event-subscriber/subscriber'));
     const { publishAppEvent, loadConfig: publishConfig } = require(path.join(ROOT, 'examples/event-subscriber/publish'));
     const { createJobRunner, loadConfig: jobConfig } = require(path.join(ROOT, 'examples/tool-job/run-job'));
     const { loadConfig: mediaConfig } = require(path.join(ROOT, 'examples/media-uploader/upload'));
