@@ -1,0 +1,11 @@
+# gitleaks configuration, used by the shared security workflow
+# (OpenVibers/OpenVibe.Shared/.github/workflows/security.yml). The default rules stay on; every
+# allowlist below is one proven false positive, matched on path AND value so nothing else is hidden.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Sample OpenVibe.Media object keys (file names, not credentials) in the uploader README's example output"
+condition = "AND"
+paths = ['''^examples/media-uploader/README\.md$''']
+regexes = ['''^3f2a9c0d1b7e-[0-9a-f-]*logo\.png$''']
