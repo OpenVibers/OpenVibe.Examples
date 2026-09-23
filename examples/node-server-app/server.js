@@ -11,7 +11,8 @@
  *     release the network runs, checked against the range this SDK supports;
  *   - the registry's services;
  *   - for each audience in OV_AUDIENCES, the capabilities an app token for that audience carries
- *     (approved grants within the project's allowance), described by the registry.
+ *     (approved grants within the project's allowance, plus the sandbox allowance for a sandbox
+ *     app), with the token's project_id and env, each capability described by the registry.
  *
  * The app token is requested from the public token endpoint and cached per audience until shortly
  * before it expires (5-minute lifetime). The client secret is never printed or returned.
@@ -32,17 +33,9 @@ function loadConfig(env = process.env) {
         network: env.OV_NETWORK_URL || 'https://openvibe.network',
         clientId: env.OV_CLIENT_ID,
         clientSecret: env.OV_CLIENT_SECRET,
-        audiences: String(env.OV_AUDIENCES || 'openvibe.media').split(',').map((s) => s.trim()).filter(Boolean),
+        audiences: String(env.OV_AUDIENCES || 'openvibe.media,openvibe.events,openvibe.tools').split(',').map((s) => s.trim()).filter(Boolean),
         port: Number(env.OV_PORT || 3002),
     };
-}
-
-/**
- * The claims of a token this process just received from Network over TLS. Only read for display;
- * the services that receive the token are the ones that verify it.
- */
-function peekClaims(token) {
-    try { return JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString('utf8')); } catch { return {}; }
 }
 
 function createApp(config, { fetch, log = console } = {}) {
@@ -51,16 +44,18 @@ function createApp(config, { fetch, log = console } = {}) {
 
     /** What an app token for `audience` carries right now, or the reason there is none. */
     async function grantsFor(audience, registry) {
-        let token;
+        let info;
         try {
-            token = await tokens.getToken({ audience });
+            info = await tokens.getTokenInfo({ audience });
         } catch (err) {
             if (isOpenVibeError(err) && ['invalid_scope', 'invalid_target', 'unauthorized_client'].includes(err.code)) {
                 return { audience, capabilities: [], refused: err.code, detail: err.detail || null };
             }
             throw err;
         }
-        const claims = peekClaims(token);
+        // Decoded, NOT verified: fine for showing what Network granted. The services that receive
+        // the token are the ones that verify it.
+        const claims = info.unverifiedClaims || {};
         const capabilities = await Promise.all((claims.cap || []).map(async (id) => {
             const c = await registry.capability(id);
             return { id, known: Boolean(c), visibility: c ? c.visibility || null : null, description: c ? c.description || null : null };
@@ -72,7 +67,7 @@ function createApp(config, { fetch, log = console } = {}) {
             project_id: claims.project_id || null,
             env: claims.env || null,
             namespaces: claims.ns || [],
-            expires_at: claims.exp ? new Date(claims.exp * 1000).toISOString() : null,
+            expires_at: info.expiresAt,
         };
     }
 
@@ -119,4 +114,4 @@ if (require.main === module) {
     server.listen(config.port, () => console.log(`node-server-app: http://localhost:${config.port}/status (app ${config.clientId})`));
 }
 
-module.exports = { loadConfig, createApp, peekClaims };
+module.exports = { loadConfig, createApp };

@@ -1,6 +1,6 @@
 {
   "name": "openvibe-examples",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Executable public integration examples for the OpenVibe platform: SDK, scoped credentials and public APIs only.",
   "license": "MIT",
@@ -9,9 +9,14 @@
     "examples/*"
   ],
   "scripts": {
-    "test": "node test/run.js"
+    "test": "node test/run.js",
+    "e2e": "node --env-file-if-exists=.env scripts/e2e.js",
+    "new-app": "node --env-file-if-exists=.env scripts/new-sandbox-app.js"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.3.0"
   }
 }

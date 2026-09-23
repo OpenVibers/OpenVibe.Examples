@@ -1,6 +1,6 @@
 {
   "name": "openvibe-example-tool-job",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Tool job: submit an OpenVibe.Tools job and reattach to its progress stream.",
   "license": "MIT",
@@ -13,6 +13,6 @@
     "node": ">=22"
   },
   "dependencies": {
-    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.2.2"
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.3.0"
   }
 }

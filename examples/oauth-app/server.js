@@ -5,11 +5,13 @@
  *
  *   node --env-file=.env server.js        # http://localhost:3009
  *
- *   /login     make a PKCE pair and a state (openvibe-sdk/auth), keep them in this browser's
+ *   /login     make a PKCE pair and a state (openvibe-sdk/auth startAuthorization, with the
+ *              audience and the capability ids to ask for), keep them in this browser's
  *              server-side session, redirect to Network's /oauth/authorize.
  *   /callback  check the state (readCallback), exchange the code on the server with the client
- *              secret AND the PKCE verifier, verify the token offline against Network's JWKS, then
- *              start a fresh session (new session id: no session fixation).
+ *              secret AND the PKCE verifier (exchangeCode, same audience), verify the app token
+ *              offline against Network's JWKS (verifyAppToken), then start a fresh session (new
+ *              session id: no session fixation).
  *   /api/me    who signed in, and what this app may do on their behalf.
  *
  * What comes back is an APP token acting for the person (actor_type app, on_behalf_of usr_…,
@@ -19,7 +21,7 @@
 const crypto = require('node:crypto');
 const http = require('node:http');
 const { createClient, isOpenVibeError } = require('openvibe-sdk/core');
-const { startAuthorization, readCallback, verifyUserToken } = require('openvibe-sdk/auth');
+const { startAuthorization, readCallback, exchangeCode, verifyAppToken } = require('openvibe-sdk/auth');
 
 const SESSION_COOKIE = 'ov_example_sid';
 const PENDING_TTL_MS = 10 * 60 * 1000;
@@ -42,28 +44,10 @@ function loadConfig(env = process.env) {
     };
 }
 
-/**
- * POST <network>/oauth/token (authorization_code) for a developer app. openvibe-sdk 0.2.2's
- * exchangeCode() cannot send `audience`, which Network requires for app clients, so this calls
- * the public token endpoint through the SDK's core client. No retries: a code works once.
- */
-async function exchangeAppCode(client, { clientId, clientSecret, code, codeVerifier, redirectUri, audience, scope }) {
-    return client.json({
-        service: 'network', path: '/oauth/token', method: 'POST', auth: false, retries: 0, idempotencyKey: false,
-        urlencoded: {
-            grant_type: 'authorization_code', code, redirect_uri: redirectUri, code_verifier: codeVerifier,
-            client_id: clientId, client_secret: clientSecret || undefined, audience, scope: scope && scope.length ? scope.join(' ') : undefined,
-        },
-    });
-}
-
-/** Who signed in, from verified claims: an app token names them in on_behalf_of. */
+/** Who signed in, from verified app-token claims: the person is on_behalf_of, and the token must be ours. */
 function signedInSubject(claims, clientId) {
-    if (claims.actor_type === 'app') {
-        if (claims.sub !== `app:${clientId}`) return null;          // a token minted for some other app
-        return claims.on_behalf_of || null;
-    }
-    return claims.subject_id || null;                                // a plain user token
+    if (claims.actor_type !== 'app' || claims.sub !== `app:${clientId}`) return null;   // minted for some other app
+    return claims.on_behalf_of || null;
 }
 
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -109,7 +93,7 @@ function createApp(config, { fetch, log = console } = {}) {
         const found = sessionOf(req);
         const sid = found ? found.sid : newSid();
         const { url, state, codeVerifier } = await startAuthorization({
-            network: config.network, clientId: config.clientId, redirectUri: config.redirectUri, scope: config.scope,
+            network: config.network, clientId: config.clientId, redirectUri: config.redirectUri, audience: config.audience, scope: config.scope,
         });
         sessions.set(sid, { ...(found ? found.s : {}), pending: { state, codeVerifier, at: Date.now() } });
         res.writeHead(302, { Location: url, 'Set-Cookie': cookie(sid, 3600), 'Cache-Control': 'no-store' });
@@ -129,11 +113,17 @@ function createApp(config, { fetch, log = console } = {}) {
             return page(res, 400, 'Sign-in failed', err.code === 'oauth.state_mismatch' ? 'This sign-in was not started here.' : `Network answered ${err.code}.`, err.code);
         }
         try {
-            const tokens = await exchangeAppCode(client, { ...config, code, codeVerifier: pending.codeVerifier });
+            // A code works once: exchangeCode() never retries. App tokens come without a refresh token.
+            const tokens = await exchangeCode({
+                network: config.network, fetch, clientId: config.clientId, clientSecret: config.clientSecret,
+                code, codeVerifier: pending.codeVerifier, redirectUri: config.redirectUri, audience: config.audience, scope: config.scope,
+            });
             const d = await client.discover();
-            const claims = await verifyUserToken(tokens.access_token, {
+            // acceptSandbox: signedInSubject() below only trusts a token minted for THIS app, so its
+            // env is this app's own environment (a new project's apps are sandbox).
+            const claims = await verifyAppToken(tokens.access_token, {
                 jwks: d.jwksUri || `${config.network}/api/.well-known/jwks`, issuer: d.issuer || undefined, audience: config.audience,
-                allowServiceTokens: true, fetch,
+                acceptSandbox: true, fetch,
             });
             const subject = signedInSubject(claims, config.clientId);
             if (!subject) return page(res, 400, 'Sign-in failed', 'The token does not name a person for this app.', 'token.no_subject');
@@ -204,4 +194,4 @@ if (require.main === module) {
     server.listen(config.port, () => console.log(`oauth-app: http://localhost:${config.port} (redirect URI ${config.redirectUri})`));
 }
 
-module.exports = { loadConfig, createApp, exchangeAppCode, signedInSubject };
+module.exports = { loadConfig, createApp, signedInSubject };

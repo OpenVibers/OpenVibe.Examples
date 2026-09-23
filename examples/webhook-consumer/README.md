@@ -1,16 +1,22 @@
 # Webhook consumer
 
-Receive OpenVibe.Events deliveries over HTTPS, verify `X-OpenVibe-Signature`, and handle every
-event **exactly once** even though delivery is at least once.
+Receive OpenVibe.Events deliveries for your project's events over HTTPS, verify
+`X-OpenVibe-Signature`, and handle every event **exactly once** even though delivery is at least once.
 
 ```bash
-node --env-file=.env subscribe.js 'media.object.*' https://hooks.example.com/webhooks/openvibe
-node --env-file=.env --env-file=.env.webhook server.js     # POST /webhooks/openvibe on :3003
+node --env-file=.env subscribe.js https://hooks.example.com/webhooks/openvibe      # app.<project_key>.*
+node --env-file=.env --env-file=.env.webhook server.js                            # POST /webhooks/openvibe on :3003
 ```
 
 ## What it proves
 
-- **Signature first, on the raw bytes.** `openvibe-sdk/events` `parseDelivery()` checks
+- **An app subscription** (`events.app.subscribe`): `subscribe.js` creates it with
+  `openvibe-sdk/events` `subscriptions.create()`. The default topic is the project's own
+  `app.<project_key>.*`; Events refuses `*`, `app.*` and other projects' keys
+  (`403 events.topic_not_allowed`), and accepts only `https` endpoints that resolve to public
+  addresses. `subscribe.js` generates the signing secret itself and writes it to `.env.webhook`
+  (mode 0600); it never prints it.
+- **Signature first, on the raw bytes.** `parseDelivery()` checks
   `sha256=<HMAC-SHA256 of the raw body>` in constant time before anything is parsed. A wrong
   secret, a changed byte or a missing header is `401`, with no detail.
 - **Exactly once.** `createInbox(db).once(consumer, event_id, fn)` writes the receipt and runs your
@@ -19,8 +25,6 @@ node --env-file=.env --env-file=.env.webhook server.js     # POST /webhooks/open
   no receipt, the consumer answers `500`, and Events retries with backoff.
 - **The signed body is the truth.** `X-OpenVibe-Event-Id` must match the body's `event_id`.
 - **Secret rotation** without downtime: `OV_WEBHOOK_SECRET_PREVIOUS` is accepted while it is set.
-- `subscribe.js` creates the subscription with `events.subscriptions.create()`. It generates the
-  signing secret itself and writes it to `.env.webhook` (mode 0600); it never prints it.
 
 ## Files
 
@@ -28,7 +32,8 @@ node --env-file=.env --env-file=.env.webhook server.js     # POST /webhooks/open
 |---|---|
 | `server.js` | `createConsumer()`: the HTTP endpoint, signature check, inbox, `received_events` table |
 | `subscribe.js` | `createSubscription()`: create the Events subscription with an app token |
-| `test/smoke.test.js` | subscription via the SDK mock, then deliveries signed and shaped exactly like the Events delivery worker's |
+| `test/mock-app-events.js` | Events' developer-app rules in front of the SDK mock (same file as in event-subscriber) |
+| `test/smoke.test.js` | subscription and its topic/endpoint rules, then deliveries from the mock's delivery worker |
 
 ## Run the smoke test
 
@@ -36,24 +41,28 @@ node --env-file=.env --env-file=.env.webhook server.js     # POST /webhooks/open
 npm test
 ```
 
-The SDK's mock platform stores subscriptions but has no delivery worker, so the test plays the
-worker: it signs each body with `signDelivery()` and sends the same headers Events sends
-(`X-OpenVibe-Event-Id`, `-Event-Type`, `-Seq`, `-Subscription-Id`, `-Delivery-Attempt`, `-Signature`).
+Deliveries come from `openvibe-sdk/testing`'s delivery worker (`deliverEvents()`): signed POSTs
+with Events' headers, in order, retried on a non-2xx. The test routes the subscription's https
+endpoint to the consumer on a local port. Wrong-secret, tampered and forged deliveries are made by
+hand. The SDK 0.3.0 mock has no `events.app.*`, so `test/mock-app-events.js` plays Events' app
+rules (capability, topic scope, https endpoint) in front of it.
 
 ## Run it against the real platform
 
-**This cannot be demonstrated against the real platform yet.** The consumer side is ready, but a
-developer app cannot create a subscription:
+1. Create a project and a **confidential** sandbox app with `events.app.subscribe` (and
+   `events.app.publish` if you want to send yourself events with
+   [event-subscriber](../event-subscriber)'s `publish.js`); see the
+   [walkthrough](../../README.md#end-to-end-walkthrough).
+2. Run `server.js` somewhere Events can reach over **https** with a public address (a VPS behind a
+   TLS proxy, or a tunnel). `localhost`, private and link-local addresses are refused, when you
+   subscribe and again on every delivery, and redirects are not followed.
+3. `cp .env.example .env`, fill in `OV_CLIENT_ID` and `OV_CLIENT_SECRET`, then
+   `node --env-file=.env subscribe.js https://<your host>/webhooks/openvibe`.
+4. Start the consumer with `--env-file=.env --env-file=.env.webhook` and publish an event
+   (`node --env-file=.env ../event-subscriber/publish.js`).
 
-- `events.subscription.manage` (and every other `events.*` capability) has visibility `internal`
-  in openvibe-contracts, so Network never grants it to an app.
-- OpenVibe.Events' public host exposes only `/realtime/stream` and health; its subscription API
-  is reachable from the platform's own hosts only.
-- The Events delivery worker only POSTs to endpoint hosts on its allow-list.
-
-When those change, the steps are: an app with `events.subscription.manage`, `cp .env.example .env`,
-`node --env-file=.env subscribe.js '<topic pattern>' https://<your host>/webhooks/openvibe`, then run
-`server.js` behind HTTPS with `--env-file=.env.webhook`.
+Limits: a sandbox project may have 5 subscriptions. Sandbox subscriptions receive sandbox events
+only. When the app is revoked or loses `events.app.subscribe`, Events disables its subscriptions.
 
 Signature scheme note: the HMAC covers the body only, with no timestamp, so a captured delivery
 can be replayed later. The inbox makes a replay harmless (it is a duplicate), which is why the

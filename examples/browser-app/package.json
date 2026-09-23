@@ -1,6 +1,6 @@
 {
   "name": "openvibe-example-browser-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Vanilla browser app: sign in with OpenVibe.Network (authorization code + PKCE) and call a public API from the browser.",
   "license": "MIT",
@@ -13,6 +13,6 @@
     "node": ">=22"
   },
   "dependencies": {
-    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.2.2"
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.3.0"
   }
 }

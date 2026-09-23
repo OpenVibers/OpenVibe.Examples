@@ -69,8 +69,9 @@ Only use it in a channel whose streamer agreed to have it there; they can ban it
 Limits today:
 
 - **Not an app credential.** Chat has no bot or app principal: the bot signs in with a Live API
-  token, which is a scoped credential of a person's account, not a Network developer-app token.
-  `chat.message.send` is a `first-party` capability, so a developer app cannot be granted it.
+  token (`hbt_…`), which is a scoped credential of a person's account, not a Network
+  developer-app token. `chat.message.send` is a `first-party` capability, so a developer app
+  cannot be granted it, and it is not in the sandbox allowance.
 - **No bot flag in the protocol.** The `[bot]` prefix and the account name are the only way the
   bot can identify itself; chat clients cannot mark bots differently yet.
 - Chat is still served on `openvibe.live` (`openvibe.chat` has not launched). The Live API-token

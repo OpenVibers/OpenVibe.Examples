@@ -1,8 +1,10 @@
 'use strict';
 /**
- * Smoke test: subscription creation against the SDK's mock platform, then deliveries shaped and
- * signed exactly like OpenVibe.Events' delivery worker sends them (the mock has no delivery
- * worker, so this test plays that part with openvibe-sdk/events signDelivery()).
+ * Smoke test: the app creates its subscription (events.app.subscribe) on the SDK's mock platform,
+ * then the mock's delivery worker (deliverEvents) POSTs signed deliveries to the consumer running
+ * on a local port: exactly once, retry after a handler failure, secret rotation. Attacks (wrong
+ * secret, tampered body, forged header) are crafted by hand. mock-app-events.js adds Events'
+ * developer-app rules in front of the mock (the SDK mock has no events.app.*). No network.
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -10,60 +12,36 @@ const os = require('node:os');
 const path = require('node:path');
 const { createMockPlatform } = require('openvibe-sdk/testing');
 const { signDelivery } = require('openvibe-sdk/events');
-const { ulid } = require('openvibe-sdk/core');
 const { createConsumer, loadConfig, openDatabase } = require('../server');
-const { createSubscription } = require('../subscribe');
+const { createSubscription, loadConfig: loadSubscribeConfig, projectKey } = require('../subscribe');
+const { createAppEventsFetch } = require('./mock-app-events');
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = () => { throw new Error('network access in a smoke test'); };
 
-const APP = 'app_01JEXAMPLEWEBHOOK000000000';
-const SECRET = 'ovsec_webhook_consumer_test_secret';
-
-function envelope(type = 'media.object.uploaded') {
-    return {
-        event_id: `evt_${ulid()}`, event_type: type, version: 1, source: 'media', timestamp: new Date().toISOString(),
-        actor: { type: 'service', id: 'media' }, subject: { type: 'object', id: 'med_01JEXAMPLEOBJECT0000000000' }, payload: { size: 12 },
-    };
-}
-
-/** POST a delivery the way the Events worker does. */
-async function deliver(port, event, seq, secret, { attempt = 1, tamper, headers = {} } = {}) {
-    const body = JSON.stringify({ event, seq });
-    const sent = tamper ? tamper(body) : body;
-    const res = await realFetch(`http://127.0.0.1:${port}/webhooks/openvibe`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-OpenVibe-Event-Id': event.event_id,
-            'X-OpenVibe-Event-Type': event.event_type,
-            'X-OpenVibe-Seq': String(seq),
-            'X-OpenVibe-Subscription-Id': 'sub_test',
-            'X-OpenVibe-Delivery-Attempt': String(attempt),
-            'X-OpenVibe-Signature': signDelivery(body, secret),
-            ...headers,
-        },
-        body: sent,
-    });
-    return { status: res.status, body: await res.json() };
-}
+const ENDPOINT = 'https://hooks.example.com/webhooks/openvibe';
 
 (async () => {
-    // 1. Create the subscription (events.subscription.manage) and keep the secret it was created with.
-    const platform = createMockPlatform({
-        clients: { [APP]: { secret: SECRET, grants: [{ capability: 'events.subscription.manage', audience: 'openvibe.events' }] } },
-    });
-    const created = await createSubscription(
-        { network: 'https://openvibe.network', clientId: APP, clientSecret: SECRET },
-        { topicPattern: 'media.object.*', endpoint: 'https://hooks.example.com/webhooks/openvibe' },
-        { fetch: platform.fetch },
-    );
+    const platform = createMockPlatform();
+    const fetch = createAppEventsFetch(platform);
+    const app = platform.addApp({ env: 'sandbox', grants: ['events.app.subscribe'] });
+    const noGrant = platform.addApp({ env: 'sandbox', project: app.projectId, grants: ['events.app.read'] });
+    const key = projectKey(app.projectId);
+    const subEnv = { OV_CLIENT_ID: app.id, OV_CLIENT_SECRET: app.secret };
+
+    // 1. Create the subscription: the project's own topic by default, https only, own project only.
+    const created = await createSubscription(loadSubscribeConfig(subEnv), { endpoint: ENDPOINT }, { fetch });
     assert.match(created.subscription.id, /^sub_/);
-    assert.equal(created.subscription.topic_pattern, 'media.object.*');
+    assert.equal(created.subscription.topic_pattern, `app.${key}.*`);
     assert.equal('secret' in created.subscription, false, 'the printable part never carries the secret');
     assert.match(created.secret, /^whsec_[0-9a-f]{64}$/);
-    await assert.rejects(createSubscription({ network: 'https://openvibe.network', clientId: APP, clientSecret: SECRET },
-        { topicPattern: 'x.y.*', endpoint: 'http://hooks.example.com/x' }, { fetch: platform.fetch }), /https/);
+    await assert.rejects(createSubscription(loadSubscribeConfig(subEnv), { endpoint: 'http://hooks.example.com/x' }, { fetch }), /https/);
+    await assert.rejects(createSubscription(loadSubscribeConfig(subEnv), { endpoint: ENDPOINT, topicPattern: 'app.pother.*' }, { fetch }),
+        (err) => err.status === 403 && err.code === 'events.topic_not_allowed');
+    await assert.rejects(createSubscription(loadSubscribeConfig(subEnv), { endpoint: ENDPOINT, topicPattern: '*' }, { fetch }),
+        (err) => err.code === 'events.topic_not_allowed');
+    await assert.rejects(createSubscription(loadSubscribeConfig({ OV_CLIENT_ID: noGrant.id, OV_CLIENT_SECRET: noGrant.secret }), { endpoint: ENDPOINT }, { fetch }),
+        (err) => err.code === 'invalid_scope', 'no events.app.subscribe grant: Network issues no token for it');
 
     // 2. Run the consumer with that secret.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-webhook-'));
@@ -80,48 +58,72 @@ async function deliver(port, event, seq, secret, { attempt = 1, tamper, headers 
         log: { log: (m) => logs.push(m), error: (m) => logs.push(m) },
     });
     await new Promise((r) => consumer.server.listen(0, '127.0.0.1', r));
-    const { port } = consumer.server.address();
+    let local = `http://127.0.0.1:${consumer.server.address().port}/webhooks/openvibe`;
 
-    const e1 = envelope();
-    let r = await deliver(port, e1, 1, created.secret);
-    assert.deepEqual(r, { status: 200, body: { ok: true, duplicate: false } });
+    // The mock's delivery worker POSTs to the subscription's https endpoint; route it to the local
+    // consumer and keep what was sent (to replay one later, like a retry after a lost 2xx).
+    const sent = [];
+    const worker = (url, init) => {
+        assert.equal(url, ENDPOINT);
+        sent.push({ body: init.body, headers: init.headers });
+        return realFetch(local, init);
+    };
+    const appEvent = (name) => platform.publishEvent({
+        event_type: `app.${key}.${name}`, source: `app-${app.id.slice(4).toLowerCase()}`,
+        actor: { type: 'app', id: app.id }, subject: { type: 'order', id: '42' }, payload: { size: 12 },
+    }, `app:${app.id}`);
+
+    const e1 = appEvent('order.created');
+    platform.publishEvent({ event_type: 'live.stream.started', source: 'live', actor: { type: 'service', id: 'live' }, subject: { type: 'stream', id: '1' } });
+    let round = await platform.deliverEvents({ fetch: worker });
+    assert.deepEqual([round.delivered, round.failed], [1, 0], 'only the subscribed topic is delivered');
+    assert.deepEqual(handled, [e1.event_id]);
+    const firstDelivery = sent[0];
+    assert.equal(firstDelivery.headers['X-OpenVibe-Event-Id'], e1.event_id);
+
+    // Redelivery of the same bytes (a retry after a lost 2xx, or a replay): acknowledged, not processed again.
+    const replay = async (d, extra = {}, body = d.body) => {
+        const res = await realFetch(local, { method: 'POST', headers: { ...d.headers, ...extra }, body });
+        return { status: res.status, body: await res.json() };
+    };
+    assert.deepEqual(await replay(firstDelivery, { 'X-OpenVibe-Delivery-Attempt': '2' }), { status: 200, body: { ok: true, duplicate: true } });
     assert.deepEqual(handled, [e1.event_id]);
 
-    // Redelivery (a retry after a lost 2xx, or a replay): acknowledged, not processed again.
-    r = await deliver(port, e1, 1, created.secret, { attempt: 2 });
-    assert.deepEqual(r, { status: 200, body: { ok: true, duplicate: true } });
-    assert.deepEqual(handled, [e1.event_id]);
-
-    // Wrong secret, tampered body, missing signature: 401 and no side effect.
-    const e2 = envelope();
-    assert.equal((await deliver(port, e2, 2, 'whsec_not_the_secret')).status, 401);
-    assert.equal((await deliver(port, e2, 2, created.secret, { tamper: (b) => b.replace('"size":12', '"size":13') })).status, 401);
-    assert.equal((await deliver(port, e2, 2, created.secret, { headers: { 'X-OpenVibe-Signature': '' } })).status, 401);
-    assert.equal(handled.length, 1);
-
-    // Header and signed body disagree on the event id: refused.
-    assert.equal((await deliver(port, e2, 2, created.secret, { headers: { 'X-OpenVibe-Event-Id': 'evt_01JOTHER0000000000000000000' } })).status, 400);
-
-    // A handler failure leaves no receipt: 500 now, processed on the retry.
+    // A handler failure leaves no receipt: the worker sees a 500, retries on its next round (attempt 2).
+    const e2 = appEvent('order.paid');
     failNext = true;
-    assert.equal((await deliver(port, e2, 2, created.secret)).status, 500);
+    round = await platform.deliverEvents({ fetch: worker });
+    assert.equal(round.failed, 1);
+    assert.equal(round.attempts[0].status, 500);
     assert.equal(consumer.inbox.seen('webhook-consumer', e2.event_id), false);
-    r = await deliver(port, e2, 2, created.secret, { attempt: 2 });
-    assert.equal(r.status, 200);
+    round = await platform.deliverEvents({ fetch: worker });
+    assert.deepEqual([round.delivered, round.attempts[0].attempt], [1, 2]);
+    assert.deepEqual(handled, [e1.event_id, e2.event_id]);
+
+    // Attacks: wrong secret, tampered body, missing signature: 401 and no side effect.
+    const last = sent.at(-1);
+    const e3 = appEvent('order.refunded');
+    const forgedBody = last.body.replaceAll(e2.event_id, e3.event_id);
+    assert.equal((await replay(last, { 'X-OpenVibe-Signature': signDelivery(forgedBody, 'whsec_not_the_secret'), 'X-OpenVibe-Event-Id': e3.event_id }, forgedBody)).status, 401);
+    assert.equal((await replay(last, { 'X-OpenVibe-Event-Id': e3.event_id }, forgedBody)).status, 401, 'changed bytes, old signature');
+    assert.equal((await replay(last, { 'X-OpenVibe-Signature': '' })).status, 401);
+    // Header and signed body disagree on the event id: refused.
+    assert.equal((await replay(last, { 'X-OpenVibe-Event-Id': e3.event_id })).status, 400);
     assert.deepEqual(handled, [e1.event_id, e2.event_id]);
 
     // Secret rotation: deliveries signed with the previous secret are accepted while it is configured.
     consumer.server.close();
-    const rotated = createConsumer(loadConfig({ OV_WEBHOOK_SECRET: 'whsec_new', OV_WEBHOOK_SECRET_PREVIOUS: created.secret, OV_DB_PATH: config.dbPath }), {
+    const rotated = createConsumer(loadConfig({ OV_WEBHOOK_SECRET: 'whsec_new_secret_after_rotation_0000000000', OV_WEBHOOK_SECRET_PREVIOUS: created.secret, OV_DB_PATH: config.dbPath }), {
         db: consumer.db, handle: (event) => handled.push(event.event_id), log: { log() {}, error() {} },
     });
     await new Promise((res) => rotated.server.listen(0, '127.0.0.1', res));
-    const p2 = rotated.server.address().port;
-    const e3 = envelope();
-    assert.equal((await deliver(p2, e3, 3, created.secret)).status, 200);
-    const e4 = envelope();
-    assert.equal((await deliver(p2, e4, 4, 'whsec_new')).status, 200);
-    assert.equal((await deliver(p2, e4, 4, 'whsec_new')).body.duplicate, true);
+    local = `http://127.0.0.1:${rotated.server.address().port}/webhooks/openvibe`;
+    round = await platform.deliverEvents({ fetch: worker });              // e3, still signed with the old secret
+    assert.equal(round.delivered, 1);
+    platform.state.subscriptions.get(created.subscription.id).secret = 'whsec_new_secret_after_rotation_0000000000';
+    const e4 = appEvent('order.closed');
+    round = await platform.deliverEvents({ fetch: worker });              // e4, signed with the new one
+    assert.equal(round.delivered, 1);
     assert.deepEqual(handled, [e1.event_id, e2.event_id, e3.event_id, e4.event_id]);
 
     // The receipt and the app's own row were written together.
@@ -129,7 +131,7 @@ async function deliver(port, event, seq, secret, { attempt = 1, tamper, headers 
     assert.deepEqual(rows, handled);
 
     // Oversized bodies are refused before parsing.
-    const big = await realFetch(`http://127.0.0.1:${p2}/webhooks/openvibe`, { method: 'POST', body: 'x'.repeat(1024 * 1024 + 10) });
+    const big = await realFetch(local, { method: 'POST', body: 'x'.repeat(1024 * 1024 + 10) });
     assert.equal(big.status, 413);
 
     // No secret in the logs.

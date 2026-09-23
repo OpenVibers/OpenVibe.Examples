@@ -7,19 +7,22 @@
  *
  * Two ways in, one cursor discipline:
  *
- *   realtime  GET /realtime/stream (SSE) through openvibe-sdk/realtime subscribe(). Works without
- *             credentials for events whose visibility is `public`. Resumes with Last-Event-ID from
- *             the saved cursor after a restart or a dropped connection.
- *   pull      GET /api/v1/events through openvibe-sdk/events iterate(), from the saved cursor.
- *             Needs an app token holding events.event.read.
+ *   pull      GET /api/v1/events through openvibe-sdk/events iterate(), from the saved cursor, as
+ *             your developer app (events.app.read, audience openvibe.events). The default topic is
+ *             your project's own events, app.<project_key>.*; add public first-party topics
+ *             (live.stream.*) if you want those too. Another project's app.* topics are refused.
+ *   realtime  GET /realtime/stream (SSE) through openvibe-sdk/realtime subscribe(), anonymously:
+ *             public first-party events only. Events never streams app.* events over realtime.
+ *             Resumes with Last-Event-ID from the saved cursor after a restart or a drop.
  *
  * The cursor is saved only AFTER an event was handled, so a crash replays at most the event in
  * hand (make your handler idempotent on event_id). In pull mode the cursor also moves past events
- * that did not match the topic, to the page's next_after_seq, once every item of that page is done.
+ * that did not match the topic, to the page's next_after_seq: iterate() calls onPage only after
+ * every item of that page was handled, so saving it there is crash-safe.
  *
- * A gap means Events can no longer give you part of the range (retention pruned it, or the cursor
- * is ahead of the stream after a restore). Nothing can replay it, so the subscriber calls
- * onResync(gap): reload whatever state you derive from these events from its source of truth.
+ * A gap means Events can no longer give you part of the range (retention pruned it: sandbox app
+ * events are kept 7 days; or the cursor is ahead of the stream after a restore). Nothing can replay
+ * it, so the subscriber calls onResync(gap): reload whatever state you derive from these events.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -28,20 +31,39 @@ const { createServiceTokenClient } = require('openvibe-sdk/auth');
 const { createEventsClient } = require('openvibe-sdk/events');
 const { subscribe } = require('openvibe-sdk/realtime');
 
+/** `p` + the project's ULID in lowercase: the second segment of your app event types. */
+function projectKey(projectId) {
+    const m = /^prj_([0-9A-HJKMNP-TV-Z]{26})$/i.exec(String(projectId || ''));
+    if (!m) throw Object.assign(new TypeError(`not a project id: ${projectId}`), { code: 'config.invalid' });
+    return `p${m[1].toLowerCase()}`;
+}
+
+/** `app-` + the app's ULID in lowercase: the `source` of the events your app publishes. */
+function appSource(appId) {
+    const m = /^(?:app:)?app_([0-9A-HJKMNP-TV-Z]{26})$/i.exec(String(appId || ''));
+    if (!m) throw Object.assign(new TypeError(`not an app id: ${appId}`), { code: 'config.invalid' });
+    return `app-${m[1].toLowerCase()}`;
+}
+
 function loadConfig(env = process.env) {
-    const mode = env.OV_EVENTS_MODE || 'realtime';
-    if (!['realtime', 'pull'].includes(mode)) throw Object.assign(new Error('OV_EVENTS_MODE must be realtime or pull'), { code: 'config.invalid' });
+    const mode = env.OV_EVENTS_MODE || 'pull';
+    if (!['realtime', 'pull'].includes(mode)) throw Object.assign(new Error('OV_EVENTS_MODE must be pull or realtime'), { code: 'config.invalid' });
     const hasCreds = Boolean(env.OV_CLIENT_ID && env.OV_CLIENT_SECRET);
     if (mode === 'pull' && !hasCreds) {
         throw Object.assign(new Error('pull mode needs OV_CLIENT_ID and OV_CLIENT_SECRET (see .env.example)'), { code: 'config.missing' });
+    }
+    const topics = String(env.OV_TOPICS || '').split(',').map((t) => t.trim()).filter(Boolean);
+    if (mode === 'realtime' && !topics.length) {
+        throw Object.assign(new Error('realtime mode needs OV_TOPICS (public first-party topics, e.g. chat.message.created)'), { code: 'config.missing' });
     }
     return {
         mode,
         network: env.OV_NETWORK_URL || 'https://openvibe.network',
         clientId: env.OV_CLIENT_ID || null,
         clientSecret: env.OV_CLIENT_SECRET || null,
+        projectId: env.OV_PROJECT_ID || null,
         eventsUrl: env.OV_EVENTS_URL || null,
-        topics: String(env.OV_TOPICS || 'chat.message.created').split(',').map((t) => t.trim()).filter(Boolean),
+        topics,                                         // empty in pull mode: your project's app.<project_key>.*
         cursorPath: env.OV_CURSOR_PATH || path.join(__dirname, 'data', 'cursor.json'),
         pollMs: Number(env.OV_POLL_MS || 5000),
     };
@@ -71,15 +93,13 @@ function createCursorStore(file) {
  */
 function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = console, cursor = createCursorStore(config.cursorPath) } = {}) {
     if (typeof onEvent !== 'function') throw new TypeError('onEvent is required');
-    const tokenProvider = config.clientId && config.clientSecret
+    const baseUrls = config.eventsUrl ? { events: config.eventsUrl } : undefined;
+    const tokens = config.clientId && config.clientSecret
         ? createServiceTokenClient({ network: config.network, clientId: config.clientId, clientSecret: config.clientSecret, fetch })
-        : undefined;
-    const client = createClient({
-        network: config.network,
-        fetch,
-        tokenProvider,
-        baseUrls: config.eventsUrl ? { events: config.eventsUrl } : undefined,
-    });
+        : null;
+    // Pull runs as your app; realtime is anonymous (public events only), so it never sends the app token.
+    const client = createClient({ network: config.network, fetch, tokenProvider: tokens || undefined, baseUrls });
+    const anonymous = createClient({ network: config.network, fetch, baseUrls });
     const stats = { handled: 0, gaps: 0 };
 
     async function gap(g, via) {
@@ -88,22 +108,31 @@ function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = c
         await onResync(g, { via });
     }
 
+    /** OV_TOPICS, or your project's own topic app.<project_key>.* (project id from OV_PROJECT_ID or the token). */
+    let topics = config.topics.length ? config.topics : null;
+    async function resolveTopics() {
+        if (topics) return topics;
+        let projectId = config.projectId;
+        if (!projectId) {
+            const info = await tokens.getTokenInfo({ audience: 'openvibe.events' });   // decoded, not verified: fine for naming
+            projectId = info.unverifiedClaims && info.unverifiedClaims.project_id;
+        }
+        topics = [`app.${projectKey(projectId)}.*`];
+        return topics;
+    }
+
     // ── pull ────────────────────────────────────────────────
     const events = createEventsClient(client);
     /** Read from the saved cursor to the head once. Returns the number of events handled. */
     async function pullOnce({ limit = 100 } = {}) {
-        let pageNext = null;
         let handled = 0;
         const iterator = events.iterate({
-            topic: config.topics,
+            topic: await resolveTopics(),
             afterSeq: cursor.get('pull') || 0,
             limit,
             onGap: (g) => gap(g, 'pull'),
-            // Called when a page arrives, before its items are handed out: the previous page is done.
-            onPage: (page) => {
-                if (pageNext != null) cursor.set('pull', pageNext);
-                pageNext = page.next_after_seq;
-            },
+            // After every item of the page was handled: also moves past events of other topics.
+            onPage: (page) => cursor.set('pull', page.next_after_seq),
         });
         for await (const { seq, event } of iterator) {
             await onEvent(event, { seq, via: 'pull' });
@@ -111,7 +140,6 @@ function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = c
             handled++;
             stats.handled++;
         }
-        if (pageNext != null) cursor.set('pull', pageNext);
         return handled;
     }
 
@@ -122,7 +150,7 @@ function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = c
     async function pollLoop() {
         while (!stopped) {
             try { await pullOnce(); } catch (err) {
-                log.error(`[events] pull failed: ${isOpenVibeError(err) ? `${err.code} request=${err.requestId}` : err.message}`);
+                log.error(`[events] pull failed: ${isOpenVibeError(err) ? `${err.code}${err.detail ? `: ${err.detail}` : ''} request=${err.requestId}` : err.message}`);
             }
             if (stopped) break;
             await new Promise((r) => { timer = setTimeout(r, config.pollMs); });
@@ -140,7 +168,7 @@ function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = c
                 stats.handled++;
             }).catch((err) => log.error(`[events] handler failed at seq ${seq}: ${err.message}`));
         }, {
-            client,
+            client: anonymous,
             fetch,
             transport: 'fetch',
             lastEventId: cursor.get('realtime'),
@@ -156,6 +184,7 @@ function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = c
         stats,
         cursor,
         pullOnce,
+        resolveTopics,
         start() {
             stopped = false;
             if (config.mode === 'pull') { pollLoop(); return null; }
@@ -182,9 +211,12 @@ if (require.main === module) {
         },
     });
     s.start();
+    if (config.mode === 'pull') {
+        s.resolveTopics().then((t) => console.log(`pulling ${t.join(', ')} every ${config.pollMs} ms`), () => {});
+    }
     const stop = () => { s.stop(); process.exit(0); };
     process.on('SIGINT', stop);
     process.on('SIGTERM', stop);
 }
 
-module.exports = { loadConfig, createCursorStore, createSubscriber };
+module.exports = { loadConfig, createCursorStore, createSubscriber, projectKey, appSource };

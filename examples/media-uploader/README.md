@@ -1,25 +1,36 @@
 # Media uploader
 
-Upload a file to OpenVibe.Media as a developer app, using `openvibe-sdk/media` and nothing else.
+Upload a file to OpenVibe.Media as a developer app, read it back and delete it, using
+`openvibe-sdk/media` and nothing else.
 
 ```bash
 node --env-file=.env upload.js ./logo.png
 # {
 #   "key": "3f2a9c0d1b7e-logo.png",
-#   "public_url": "https://openvibe.media/f/3f2a9c0d1b7e-logo.png",
-#   "size": 5120, "mime": "image/png", "sha256": "…", "deduplicated": false
+#   "url": "https://openvibe.media/f/3f2a9c0d1b7e-logo.png?exp=…&sig=…",
+#   "url_expires_at": "2026-…",
+#   "sandbox": true,
+#   "size": 5120, "mime": "image/png", "sha256": "…", "deduplicated": false,
+#   "project_id": "prj_…", "contracts": "0.28.0"
 # }
+node --env-file=.env upload.js --get 3f2a9c0d1b7e-logo.png
+node --env-file=.env upload.js --delete 3f2a9c0d1b7e-logo.png
 ```
 
 ## What it proves
 
-- An app with only a client id, a secret and one grant (`media.object.upload`) gets a 5-minute
-  app token from Network's public token endpoint, asking for exactly that capability (`scope`).
+- An app with only a client id, a secret and its grants gets a 5-minute app token from Network's
+  public token endpoint, asking for exactly the capability each call needs (`scope`):
+  `media.object.upload` to upload or delete, `media.object.read` to read.
 - Media's origin comes from the platform descriptor (`client.discover()`), not a hard-coded host,
   and the contracts version the network runs is checked against the SDK's supported range.
-- The upload lands in the app's own namespace. For a developer app that is the **project id**
-  (`prj_…`), because Network puts the project id in the token's `ns` claim. Another namespace is
-  refused by Media with `403 capability.namespace_denied`.
+- **Your project is your Media tenant.** The path names the project id (`prj_…`), which is also the
+  token's `project_id` and `ns`; it is read from the token when `OV_PROJECT_ID` is empty. Another
+  project's tenant is refused with `403 capability.namespace_denied`.
+- **Sandbox files are private.** Media keeps a sandbox app's files in a separate sandbox tenant of
+  the project (you still address it by the project id) and never serves them publicly: an upload
+  comes back with `sandbox: true` and a signed, expiring `url`. A production app's files get a
+  public `/f/<key>` URL.
 - Uploads are content-addressed: the same bytes again come back `deduplicated`, so retries are safe.
 - The secret is read from the environment and never printed, not even in error messages.
 
@@ -27,8 +38,8 @@ node --env-file=.env upload.js ./logo.png
 
 | File | What |
 |---|---|
-| `upload.js` | `loadConfig()`, `createUploader()`, `explain()` (hints for the usual errors), CLI |
-| `test/smoke.test.js` | the flow against `openvibe-sdk/testing` (fake Network + Media) |
+| `upload.js` | `loadConfig()`, `createUploader()` (`upload`, `get`, `remove`), `describe()`, `explain()` (hints for the usual errors), CLI |
+| `test/smoke.test.js` | upload against `openvibe-sdk/testing` (fake Network + Media), with a sandbox app |
 
 ## Run the smoke test
 
@@ -37,24 +48,18 @@ npm test          # from this folder, or `npm test -- media` from the repository
 ```
 
 No network: Network and Media are the SDK's in-process mock, with real RS256 tokens and the same
-audience, capability and namespace checks.
+audience, capability, namespace and sandbox checks. `--get` and `--delete` are not covered there:
+the SDK 0.3.0 mock's Media accepts app tokens on upload only, while the real Media accepts
+`media.object.read` for reads. `npm run e2e` at the repository root runs all three against the
+platform.
 
 ## Run it against the real platform
 
-1. Follow the [walkthrough](../../README.md#end-to-end-walkthrough) to create a project and a
-   **confidential** app, and request `media.object.upload` on it.
-2. `cp .env.example .env` and fill in `OV_CLIENT_ID`, `OV_CLIENT_SECRET` and
-   `OV_MEDIA_NAMESPACE` (your `prj_…` project id).
+1. Create a project and a **confidential** sandbox app with `media.object.upload` and
+   `media.object.read` ([walkthrough](../../README.md#end-to-end-walkthrough)).
+2. `cp .env.example .env` and fill in `OV_CLIENT_ID` and `OV_CLIENT_SECRET`.
 3. `node --env-file=.env upload.js ./some-file.png`
 
-What has to be true on the platform side first, and is **not** true by default today:
-
-- **Sandbox apps get no Media token.** Network issues sandbox tokens only for audiences listed in
-  `DEV_SANDBOX_AUDIENCES`, which is empty by default, so a sandbox app gets `invalid_target`.
-  Media must also accept `env: sandbox` tokens. Until both opt in, use a production app (staff
-  switch the project to `sandbox+production`).
-- **The capability must be in your project's allowance** (staff set it; the default allowance is empty).
-- **Media needs a tenant named after your project id.** Media only accepts uploads for tenants it
-  knows, and tenants are created by the Media operators.
-- Media v1 accepts app tokens for **upload only**. Listing, reading metadata and deleting
-  (`media.files.list/get/delete`) need a Media app API key, which developer apps do not have.
+Media creates the project's tenant on first use; no operator step is needed. A sandbox tenant has
+a small quota (100 MB by default; beyond it an upload is `413`). Open a sandbox file with the signed `url`
+before `url_expires_at`; `--get` returns a fresh one.

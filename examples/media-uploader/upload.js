@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Media uploader: upload a file to OpenVibe.Media as a developer app.
+ * Media uploader: upload a file to OpenVibe.Media as a developer app, read it back, delete it.
  *
- *   node --env-file=.env upload.js ./logo.png
+ *   node --env-file=.env upload.js ./logo.png           # media.object.upload
+ *   node --env-file=.env upload.js --get <key>          # media.object.read
+ *   node --env-file=.env upload.js --delete <key>       # media.object.upload
  *
- * 1. Ask OpenVibe.Network for an app token (client credentials, audience openvibe.media, scope
- *    media.object.upload).
+ * 1. Ask OpenVibe.Network for an app token (client credentials, audience openvibe.media) carrying
+ *    exactly the capability the operation needs (`scope`).
  * 2. Find Media's origin in the platform descriptor (registry discovery), never a hard-coded host.
- * 3. Upload to the Media namespace your grant names. For a developer app that is your project id
- *    (prj_…), because Network puts the project id in the token's `ns` claim.
+ * 3. Use the Media tenant of your project: the path names your project id (prj_…), the same id
+ *    Network puts in the token's `project_id` and `ns` claims. Media keeps a sandbox app's files in
+ *    a separate sandbox tenant of that project (you still address it by the project id) and never
+ *    serves them publicly: a sandbox upload comes back with a signed, expiring `url` instead.
  *
  * Only openvibe-sdk and the public token endpoint are used. The client secret is read from the
  * environment and never printed.
@@ -27,7 +31,7 @@ const TYPES = {
 };
 
 function loadConfig(env = process.env) {
-    const missing = ['OV_CLIENT_ID', 'OV_CLIENT_SECRET', 'OV_MEDIA_NAMESPACE'].filter((k) => !env[k]);
+    const missing = ['OV_CLIENT_ID', 'OV_CLIENT_SECRET'].filter((k) => !env[k]);
     if (missing.length) {
         const err = new Error(`missing environment variables: ${missing.join(', ')} (see .env.example)`);
         err.code = 'config.missing';
@@ -37,37 +41,68 @@ function loadConfig(env = process.env) {
         network: env.OV_NETWORK_URL || 'https://openvibe.network',
         clientId: env.OV_CLIENT_ID,
         clientSecret: env.OV_CLIENT_SECRET,
-        namespace: env.OV_MEDIA_NAMESPACE,
+        projectId: env.OV_PROJECT_ID || null,
         mediaUrl: env.OV_MEDIA_URL || null,
     };
 }
 
+/** What a caller should see of a Media file: never more than this. */
+function describe(file) {
+    if (!file) return null;
+    return {
+        key: file.key,
+        url: file.public_url || file.url || null,          // public URL, or a signed one for sandbox files
+        url_expires_at: file.url_expires_at || null,
+        sandbox: Boolean(file.sandbox),
+        size: file.size, mime: file.mime, sha256: file.sha256,
+        deduplicated: Boolean(file.deduplicated),
+    };
+}
+
 function createUploader(config, { fetch } = {}) {
-    const tokens = createServiceTokenClient({
-        network: config.network,
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-        scope: { 'openvibe.media': 'media.object.upload' },   // ask for exactly what this program uses
-        fetch,
-    });
-    const client = createClient({
-        network: config.network,
-        fetch,
-        tokenProvider: tokens,
-        baseUrls: config.mediaUrl ? { media: config.mediaUrl } : undefined,
-    });
+    const clients = new Map();
+    /** One token client per capability, so each token carries only what that call needs. */
+    function clientFor(capability) {
+        if (!clients.has(capability)) {
+            const tokens = createServiceTokenClient({
+                network: config.network, clientId: config.clientId, clientSecret: config.clientSecret, fetch,
+                scope: { 'openvibe.media': capability },
+            });
+            clients.set(capability, {
+                tokens,
+                client: createClient({ network: config.network, fetch, tokenProvider: tokens, baseUrls: config.mediaUrl ? { media: config.mediaUrl } : undefined }),
+            });
+        }
+        return clients.get(capability);
+    }
+
+    /** The Media client for the project, for calls that need `capability`. */
+    async function mediaFor(capability) {
+        const { client, tokens } = clientFor(capability);
+        const discovery = await client.discover();                  // origins + contracts version check
+        const projectId = config.projectId || (await tokens.getTokenInfo({ audience: 'openvibe.media' })).unverifiedClaims.project_id;
+        return { media: createMediaClient(client, { app: projectId, publicOrigin: await client.origin('media') }), projectId, discovery };
+    }
 
     return {
-        client,
-        /** Upload one file -> { key, url, public_url, size, mime, sha256, deduplicated? } */
+        /** Upload one file -> { key, url, url_expires_at, sandbox, size, mime, sha256, deduplicated, project_id, contracts } */
         async upload(filePath) {
-            const discovery = await client.discover();           // origins + contracts version check
-            const media = createMediaClient(client, { app: config.namespace, publicOrigin: await client.origin('media') });
+            const { media, projectId, discovery } = await mediaFor('media.object.upload');
             const bytes = await fs.promises.readFile(filePath);
             const filename = path.basename(filePath);
             const contentType = TYPES[path.extname(filename).toLowerCase()] || 'application/octet-stream';
             const file = await media.upload(bytes, { filename, contentType });
-            return { ...file, contracts: discovery.contractsVersion };
+            return { ...describe(file), project_id: projectId, contracts: discovery.contractsVersion };
+        },
+        /** A file's metadata (media.object.read), or null when it does not exist in this project and environment. */
+        async get(key) {
+            const { media } = await mediaFor('media.object.read');
+            return describe(await media.files.get(key));
+        },
+        /** Delete a file (media.object.upload): true, or false when there was no such file. */
+        async remove(key) {
+            const { media } = await mediaFor('media.object.upload');
+            return media.files.delete(key);
         },
     };
 }
@@ -78,31 +113,39 @@ function explain(err) {
     switch (code) {
         case 'config.missing': return err.message;
         case 'invalid_client': return 'Network refused the client id or secret. Check OV_CLIENT_ID / OV_CLIENT_SECRET (rotate the secret in your project if it was lost).';
-        case 'invalid_target': return 'Network does not issue tokens for openvibe.media to this app. Sandbox apps only get tokens for audiences that accept sandbox traffic; see the README.';
-        case 'invalid_scope': return 'The app holds no approved media.object.upload grant. Request it on your app and have a project admin approve it.';
-        case 'capability.namespace_denied': return 'Your token is not valid for this namespace. OV_MEDIA_NAMESPACE must be your project id (prj_...).';
-        case 'token.sandbox_refused': return 'Media does not accept sandbox tokens yet. See the README section "Running against the real platform".';
+        case 'invalid_target': return 'Network does not issue tokens for openvibe.media to this app (its environment is not enabled for that audience).';
+        case 'invalid_scope': return 'The app holds no approved grant for this operation (media.object.upload to upload or delete, media.object.read to read). Request it on your app (openvibe.codes, or the projects API).';
+        case 'capability.namespace_denied': return 'Your token is not valid for this project. OV_PROJECT_ID must be the project your app belongs to (or leave it empty).';
+        case 'token.sandbox_refused': return 'Media refused a sandbox token on this route. Sandbox apps can use their own project tenant only (/api/v1/<project id>/files).';
         default: return isOpenVibeError(err) ? `${err.code}${err.detail ? `: ${err.detail}` : ''}${err.requestId ? ` (request ${err.requestId})` : ''}` : String(err && err.message);
     }
 }
 
 async function main(argv = process.argv.slice(2)) {
-    const file = argv[0];
-    if (!file) {
-        console.error('usage: node upload.js <file>');
+    const [first, key] = argv;
+    if (!first || (['--get', '--delete'].includes(first) && !key)) {
+        console.error('usage: node upload.js <file> | --get <key> | --delete <key>');
         return 2;
     }
     try {
         const uploader = createUploader(loadConfig());
-        const out = await uploader.upload(file);
-        console.log(JSON.stringify({ key: out.key, public_url: out.public_url, size: out.size, mime: out.mime, sha256: out.sha256, deduplicated: Boolean(out.deduplicated) }, null, 2));
+        if (first === '--get') {
+            const file = await uploader.get(key);
+            if (!file) { console.error(`no file ${key} in this project (and environment)`); return 1; }
+            console.log(JSON.stringify(file, null, 2));
+        } else if (first === '--delete') {
+            console.log((await uploader.remove(key)) ? `deleted ${key}` : `no file ${key}`);
+        } else {
+            const out = await uploader.upload(first);
+            console.log(JSON.stringify(out, null, 2));
+        }
         return 0;
     } catch (err) {
-        console.error(`upload failed: ${explain(err)}`);
+        console.error(`media failed: ${explain(err)}`);
         return 1;
     }
 }
 
 if (require.main === module) main().then((code) => { process.exitCode = code; });
 
-module.exports = { loadConfig, createUploader, explain, main };
+module.exports = { loadConfig, createUploader, describe, explain, main };

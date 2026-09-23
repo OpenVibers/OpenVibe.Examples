@@ -1,19 +1,21 @@
 'use strict';
 /**
- * Smoke test: pull with a durable cursor, realtime with resume, and gap handling in both, against
- * the SDK's mock platform (fake Network + Events, including /realtime/stream). No network.
+ * Smoke test: publish to the project's own topic, pull it with a durable cursor as the app, gap
+ * handling after retention, and anonymous realtime with resume. Network, Events (incl.
+ * /realtime/stream) are openvibe-sdk/testing's mock platform; mock-app-events.js adds Events'
+ * developer-app rules in front of it (the SDK mock has no events.app.*). No network.
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createMockPlatform } = require('openvibe-sdk/testing');
-const { createSubscriber, loadConfig, createCursorStore } = require('../subscriber');
+const { createSubscriber, loadConfig, createCursorStore, projectKey, appSource } = require('../subscriber');
+const { publishAppEvent, loadConfig: loadPublishConfig } = require('../publish');
+const { createAppEventsFetch } = require('./mock-app-events');
 
 globalThis.fetch = () => { throw new Error('network access in a smoke test'); };
 
-const APP = 'app_01JEXAMPLESUBSCRIBER000000';
-const SECRET = 'ovsec_event_subscriber_test_secret';
 const quiet = { log() {}, error() {} };
 
 async function waitFor(check, what, ms = 3000) {
@@ -25,85 +27,113 @@ async function waitFor(check, what, ms = 3000) {
     throw new Error(`timed out waiting for ${what}`);
 }
 
-const media = (visibility = 'public', type = 'media.object.uploaded') => ({
+const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
     event_type: type, source: 'media', visibility,
-    actor: { type: 'service', id: 'media' }, subject: { type: 'object', id: 'med_01JEXAMPLEOBJECT0000000000' },
+    actor: { type: 'service', id: 'media' }, subject: { type: 'object', id: 'med_01JEXAMPA0BJECT0000000000' },
 });
 
 (async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-subscriber-'));
-    const platform = createMockPlatform({
-        clients: { [APP]: { secret: SECRET, grants: [{ capability: 'events.event.read', audience: 'openvibe.events' }] } },
-    });
+    const platform = createMockPlatform();
+    const fetch = createAppEventsFetch(platform);
+    // A sandbox app (the default for a new project) with the events grants, and one of another project.
+    const app = platform.addApp({ env: 'sandbox', grants: ['events.app.publish', 'events.app.read'] });
+    const other = platform.addApp({ env: 'sandbox', grants: ['events.app.publish', 'events.app.read'] });
+    const publishOnly = platform.addApp({ env: 'sandbox', project: app.projectId, grants: ['events.app.publish'] });
 
-    // ── pull: durable cursor ────────────────────────────────
-    const a = platform.publishEvent(media());
-    platform.publishEvent(media('public', 'chat.message.created'));      // another topic: skipped, cursor moves past it
-    const b = platform.publishEvent(media('internal', 'media.object.deleted'));
-    const pullEnv = { OV_EVENTS_MODE: 'pull', OV_CLIENT_ID: APP, OV_CLIENT_SECRET: SECRET, OV_TOPICS: 'media.object.*', OV_CURSOR_PATH: path.join(dir, 'pull.json') };
+    // Names: project_key and source exactly as Events defines them.
+    assert.equal(projectKey('prj_01JAB2C3D4E5F6G7H8J9K0MNPQ'), 'p01jab2c3d4e5f6g7h8j9k0mnpq');
+    assert.equal(appSource('app_01JAB2C3D4E5F6G7H8J9K0MNPQ'), 'app-01jab2c3d4e5f6g7h8j9k0mnpq');
+    assert.equal(appSource('app:app_01JAB2C3D4E5F6G7H8J9K0MNPQ'), 'app-01jab2c3d4e5f6g7h8j9k0mnpq');
+    const key = projectKey(app.projectId);
+
+    // ── publish to the own topic ────────────────────────────
+    const env = { OV_CLIENT_ID: app.id, OV_CLIENT_SECRET: app.secret };
+    const pub = (e, opts) => publishAppEvent(loadPublishConfig(e || env), opts || {}, { fetch });
+    const a = await pub(env, { name: 'order.created', payload: { total: 3 } });
+    assert.equal(a.event_type, `app.${key}.order.created`);
+    assert.equal(a.duplicate, false);
+    const stored = platform.state.events.find((x) => x.event.event_id === a.event_id).event;
+    assert.equal(stored.source, appSource(app.id));
+    assert.deepEqual(stored.actor, { type: 'app', id: app.id });
+    // Same event_id again: Events answers with the stored seq, nothing new.
+    assert.equal((await pub(env, { name: 'order.created', eventId: a.event_id })).duplicate, true);
+    await assert.rejects(pub(env, { name: 'Bad Name' }), /dot-separated/);
+
+    platform.publishEvent(firstParty('public', 'live.stream.started'));          // first-party, another topic
+    await pub({ OV_CLIENT_ID: other.id, OV_CLIENT_SECRET: other.secret }, { name: 'order.created' });   // another project
+    platform.publishEvent(firstParty('internal', `app.${key}.forged`));         // not from this project's apps: never shown
+    const b = await pub(env, { name: 'order.paid' });
+
+    // ── pull: own topic by default, durable cursor ──────────
+    const pullEnv = { ...env, OV_CURSOR_PATH: path.join(dir, 'pull.json') };
     let seen = [];
-    let s = createSubscriber(loadConfig(pullEnv), { fetch: platform.fetch, log: quiet, onEvent: (e, { seq }) => { seen.push(seq); } });
+    let s = createSubscriber(loadConfig(pullEnv), { fetch, log: quiet, onEvent: (e, { seq }) => { seen.push(seq); } });
+    assert.deepEqual(await s.resolveTopics(), [`app.${key}.*`], 'the project id comes from the app token');
     assert.equal(await s.pullOnce({ limit: 2 }), 2);
-    assert.deepEqual(seen, [a.seq, b.seq]);
-    assert.equal(createCursorStore(pullEnv.OV_CURSOR_PATH).get('pull'), 3, 'cursor saved at the head');
+    assert.deepEqual(seen, [a.seq, b.seq], 'own project only: not the other project, not the forged one');
+    const head = platform.state.events.at(-1).seq;
+    assert.equal(createCursorStore(pullEnv.OV_CURSOR_PATH).get('pull'), head, 'cursor saved at the head');
 
     // A new process resumes from the cursor: only what is new.
-    const c = platform.publishEvent(media());
+    const c = await pub(env, { name: 'order.shipped' });
     seen = [];
-    s = createSubscriber(loadConfig(pullEnv), { fetch: platform.fetch, log: quiet, onEvent: (e, { seq }) => { seen.push(seq); } });
+    s = createSubscriber(loadConfig(pullEnv), { fetch, log: quiet, onEvent: (e, { seq }) => { seen.push(seq); } });
     assert.equal(await s.pullOnce(), 1);
     assert.deepEqual(seen, [c.seq]);
 
     // A handler that fails leaves the cursor on the last event that succeeded.
-    const d = platform.publishEvent(media());
-    const e = platform.publishEvent(media());
+    const d = await pub(env);
+    const e = await pub(env);
     seen = [];
     s = createSubscriber(loadConfig(pullEnv), {
-        fetch: platform.fetch, log: quiet,
+        fetch, log: quiet,
         onEvent: (ev, { seq }) => { if (seq === e.seq) throw new Error('boom'); seen.push(seq); },
     });
     await assert.rejects(s.pullOnce(), /boom/);
     assert.equal(createCursorStore(pullEnv.OV_CURSOR_PATH).get('pull'), d.seq);
-    s = createSubscriber(loadConfig(pullEnv), { fetch: platform.fetch, log: quiet, onEvent: (ev, { seq }) => { seen.push(seq); } });
+    s = createSubscriber(loadConfig(pullEnv), { fetch, log: quiet, onEvent: (ev, { seq }) => { seen.push(seq); } });
     await s.pullOnce();
     assert.deepEqual(seen, [d.seq, e.seq], 'the failed event is retried, nothing is skipped');
 
-    // A gap (retention pruned the range): onResync is told, reading continues. The mock never
-    // prunes, so this wraps its fetch to answer the way Events does after pruning.
-    const gapFetch = async (input, init) => {
-        const res = await platform.fetch(input, init);
-        const url = String(input && input.url ? input.url : input);
-        if (!url.includes('/api/v1/events?')) return res;
-        const body = await res.json();
-        return new Response(JSON.stringify({ ...body, gap: { from_seq: 7, to_seq: 9, reason: 'retention' } }), { status: res.status, headers: { 'Content-Type': 'application/json' } });
-    };
-    const f = platform.publishEvent(media());
+    // A gap: retention pruned the range the cursor still needs. onResync is told, reading continues.
+    const gapEnv = { ...env, OV_CURSOR_PATH: path.join(dir, 'gap.json') };
+    createCursorStore(gapEnv.OV_CURSOR_PATH).set('pull', a.seq);
+    platform.pruneEvents(c.seq);
+    const f = await pub(env);
     const resyncs = [];
     seen = [];
-    s = createSubscriber(loadConfig(pullEnv), { fetch: gapFetch, log: quiet, onEvent: (ev, { seq }) => { seen.push(seq); }, onResync: (g, { via }) => resyncs.push({ ...g, via }) });
+    s = createSubscriber(loadConfig(gapEnv), { fetch, log: quiet, onEvent: (ev, { seq }) => { seen.push(seq); }, onResync: (g, { via }) => resyncs.push({ ...g, via }) });
     await s.pullOnce();
-    assert.deepEqual(resyncs, [{ from_seq: 7, to_seq: 9, reason: 'retention', via: 'pull' }]);
-    assert.deepEqual(seen, [f.seq]);
+    assert.deepEqual(resyncs, [{ from_seq: a.seq + 1, to_seq: c.seq, via: 'pull' }]);
+    assert.deepEqual(seen, [d.seq, e.seq, f.seq]);
 
-    // Pull needs credentials; realtime does not.
-    assert.throws(() => loadConfig({ OV_EVENTS_MODE: 'pull' }), /OV_CLIENT_ID/);
+    // Another project's topic is refused by Events; so is a pull without events.app.read.
+    s = createSubscriber(loadConfig({ ...pullEnv, OV_TOPICS: `app.${projectKey(other.projectId)}.*` }), { fetch, log: quiet, onEvent() {} });
+    await assert.rejects(s.pullOnce(), (err) => err.status === 403 && err.code === 'events.topic_not_allowed');
+    s = createSubscriber(loadConfig({ ...pullEnv, OV_CLIENT_ID: publishOnly.id, OV_CLIENT_SECRET: publishOnly.secret }), { fetch, log: quiet, onEvent() {} });
+    await assert.rejects(s.pullOnce(), (err) => err.status === 403 && err.code === 'capability.denied');
 
-    // ── realtime: anonymous, public events only, resume ────
+    // Pull needs credentials; realtime needs topics but no credentials.
+    assert.throws(() => loadConfig({}), /OV_CLIENT_ID/);
+    assert.throws(() => loadConfig({ OV_EVENTS_MODE: 'realtime' }), /OV_TOPICS/);
+
+    // ── realtime: anonymous, public first-party events only, resume ──
     const rtEnv = { OV_EVENTS_MODE: 'realtime', OV_TOPICS: 'media.object.*', OV_CURSOR_PATH: path.join(dir, 'realtime.json') };
     const live = [];
-    const rt = createSubscriber(loadConfig(rtEnv), { fetch: platform.fetch, log: quiet, onEvent: (ev, { seq }) => { live.push({ seq, type: ev.event_type }); } });
+    const rt = createSubscriber(loadConfig(rtEnv), { fetch, log: quiet, onEvent: (ev, { seq }) => { live.push({ seq, type: ev.event_type }); } });
     const subscription = rt.start();
     await waitFor(() => subscription.connected, 'the realtime connection');
-    const p1 = platform.publishEvent(media());
-    platform.publishEvent(media('internal'));                             // never reaches an anonymous viewer
-    const p2 = platform.publishEvent(media('public', 'media.object.deleted'));
+    const p1 = platform.publishEvent(firstParty());
+    platform.publishEvent(firstParty('internal'));                           // never reaches an anonymous viewer
+    const p2 = platform.publishEvent(firstParty('public', 'media.object.deleted'));
     await waitFor(() => live.length === 2, 'two public events');
     assert.deepEqual(live.map((x) => x.seq), [p1.seq, p2.seq]);
     await waitFor(() => createCursorStore(rtEnv.OV_CURSOR_PATH).get('realtime') === p2.seq, 'the realtime cursor');
 
     // The connection drops; an event published meanwhile arrives once after the reconnect.
     platform.dropRealtime();
-    const p3 = platform.publishEvent(media());
+    const p3 = platform.publishEvent(firstParty());
     await waitFor(() => live.length === 3, 'the event published during the drop');
     assert.equal(live[2].seq, p3.seq);
     await new Promise((r) => setTimeout(r, 100));
@@ -111,9 +141,9 @@ const media = (visibility = 'public', type = 'media.object.uploaded') => ({
     rt.stop();
 
     // A restart resumes from the saved cursor: the event published while stopped is delivered.
-    const p4 = platform.publishEvent(media());
+    const p4 = platform.publishEvent(firstParty());
     const after = [];
-    const rt2 = createSubscriber(loadConfig(rtEnv), { fetch: platform.fetch, log: quiet, onEvent: (ev, { seq }) => { after.push(seq); } });
+    const rt2 = createSubscriber(loadConfig(rtEnv), { fetch, log: quiet, onEvent: (ev, { seq }) => { after.push(seq); } });
     rt2.start();
     await waitFor(() => after.length === 1, 'the event published while stopped');
     assert.deepEqual(after, [p4.seq]);
@@ -123,14 +153,14 @@ const media = (visibility = 'public', type = 'media.object.uploaded') => ({
     const aheadPath = path.join(dir, 'ahead.json');
     createCursorStore(aheadPath).set('realtime', 9999);
     const rtGaps = [];
-    const rt3 = createSubscriber(loadConfig({ ...rtEnv, OV_CURSOR_PATH: aheadPath }), { fetch: platform.fetch, log: quiet, onEvent() {}, onResync: (g, { via }) => rtGaps.push({ ...g, via }) });
+    const rt3 = createSubscriber(loadConfig({ ...rtEnv, OV_CURSOR_PATH: aheadPath }), { fetch, log: quiet, onEvent() {}, onResync: (g, { via }) => rtGaps.push({ ...g, via }) });
     rt3.start();
     await waitFor(() => rtGaps.length === 1, 'the realtime gap');
     assert.equal(rtGaps[0].reason, 'cursor_ahead');
     assert.equal(rtGaps[0].via, 'realtime');
     rt3.stop();
 
-    // No credentials were sent on the anonymous stream.
+    // Realtime never carried credentials, even with an app configured.
     const streamCalls = platform.stats.requests.filter((r) => r.url.includes('/realtime/stream'));
     assert.ok(streamCalls.length >= 3);
     assert.ok(streamCalls.every((r) => !r.headers.authorization));

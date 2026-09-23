@@ -13,8 +13,10 @@ curl -s localhost:3002/status
 - `contracts`: the openvibe-contracts release the network runs, and whether this SDK supports it;
 - `services`: every registered service with its status and origin (from the registry);
 - `grants`: for each audience in `OV_AUDIENCES`, the capabilities an app token for it carries
-  (approved grants within your project's allowance), each described by the registry, plus the
-  token's `project_id`, `env` and `ns`; or why Network refused (`invalid_scope`, `invalid_target`).
+  (approved grants within your project's allowance, plus the sandbox allowance for a sandbox app),
+  each described by the registry, plus the token's `project_id`, `env`, `ns` and expiry
+  (`getTokenInfo()`, decoded for display, not verified); or why Network refused (`invalid_scope`,
+  `invalid_target`).
 
 ## What it proves
 
@@ -29,7 +31,7 @@ curl -s localhost:3002/status
 
 | File | What |
 |---|---|
-| `server.js` | `loadConfig()`, `createApp()` (the HTTP server and `status()`), `peekClaims()` |
+| `server.js` | `loadConfig()`, `createApp()` (the HTTP server and `status()`) |
 | `test/smoke.test.js` | discovery, registry, grants per audience, token caching, trace propagation |
 
 ## Run the smoke test
@@ -40,12 +42,13 @@ npm test
 
 ## Run it against the real platform
 
-1. Create a project and a **confidential** app ([walkthrough](../../README.md#end-to-end-walkthrough)).
-2. `cp .env.example .env`, fill in `OV_CLIENT_ID` and `OV_CLIENT_SECRET`, set `OV_AUDIENCES` to
-   the audiences you hold grants for (`openvibe.media`, `openvibe.tools`, …).
+1. Create a project and a **confidential** sandbox app and request its grants
+   ([walkthrough](../../README.md#end-to-end-walkthrough)).
+2. `cp .env.example .env`, fill in `OV_CLIENT_ID` and `OV_CLIENT_SECRET`. `OV_AUDIENCES` defaults
+   to the three audiences a sandbox app can get tokens for: `openvibe.media`, `openvibe.events`,
+   `openvibe.tools`.
 3. `node --env-file=.env server.js` and open `http://localhost:3002/status`.
 
-Discovery and the registry work for anyone today. The `grants` part shows a token only when
-Network will issue one: a **sandbox** app gets `invalid_target` for every audience until staff list
-that audience in `DEV_SANDBOX_AUDIENCES` (empty by default), and any app gets `invalid_scope` until
-a grant is approved inside the project's allowance (also empty by default).
+Each audience shows the token's `project_id`, `env: sandbox` and the capabilities it carries, or
+why Network refused: `invalid_scope` when no grant for that audience is approved, `invalid_target`
+for an audience that does not take sandbox tokens (for example `openvibe.network`).

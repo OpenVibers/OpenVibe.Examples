@@ -1,39 +1,39 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Vanilla browser app: a static page that signs in with OpenVibe.Network using PKCE
- * (openvibe-sdk/auth/browser in the browser) and calls a public API (the ecosystem registry)
- * straight from the browser.
+ * Vanilla browser app: a static page that signs in with OpenVibe.Network using PKCE and reads a
+ * public API (the ecosystem registry) straight from the browser. No framework, no build step: the
+ * page imports openvibe-sdk's browser bundle (browser/openvibe-sdk.mjs) as an ES module.
  *
  *   node --env-file=.env server.js        # http://localhost:3001
  *
  * The app is a PUBLIC developer app: it has no client secret. The browser makes the PKCE pair and
  * keeps the verifier in sessionStorage; after the redirect it hands code + verifier to this tiny
- * server, which exchanges them at Network's token endpoint (Network does not open its token
- * endpoint to third-party origins, and the resulting token is kept out of page scripts in an
- * HttpOnly session). The server has no secrets at all.
+ * server, which exchanges them at Network's token endpoint with openvibe-sdk exchangeCode() (no
+ * secret; the audience is sent). Network's /oauth/* is not CORS-open to third-party origins, and
+ * the token is better kept out of page scripts anyway: it lives in an HttpOnly session here.
  *
- *   GET  /, /callback         the page (public/index.html)
- *   GET  /app.js              the page's script
- *   GET  /sdk/openvibe-sdk.js openvibe-sdk's browser-safe modules as one script (lib/sdk-bundle.js)
- *   GET  /config.json         public settings: network, client id, redirect URI, scope
- *   POST /auth/exchange       { code, codeVerifier } -> session cookie, { subject }
- *   GET  /api/session         who is signed in
- *   GET  /api/registry/services  the same public registry read, server side: the page's fallback
- *                             while Network does not allow third-party origins on the registry
+ *   GET  /, /callback            the page (public/index.html)
+ *   GET  /app.js                 the page's module script
+ *   GET  /vendor/openvibe-sdk.mjs  openvibe-sdk's browser bundle, served from node_modules as is
+ *   GET  /config.json            public settings: network, client id, redirect URI, audience, scope
+ *   POST /auth/exchange          { code, codeVerifier } -> session cookie, { subject }
+ *   GET  /api/session            who is signed in
  *   POST /auth/logout
+ *   GET  /api/registry/services  OPTIONAL (OV_REGISTRY_PROXY=1): the same public registry read,
+ *                                server side, for pages that cannot call Network from the browser
  */
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { createClient, isOpenVibeError } = require('openvibe-sdk/core');
-const { verifyUserToken } = require('openvibe-sdk/auth');
+const { exchangeCode, verifyAppToken } = require('openvibe-sdk/auth');
 const { createRegistryClient } = require('openvibe-sdk/registry');
-const { buildSdkBundle } = require('./lib/sdk-bundle');
 
 const SESSION_COOKIE = 'ov_browser_example_sid';
 const PUBLIC = path.join(__dirname, 'public');
+const SDK_BUNDLE = require.resolve('openvibe-sdk/browser/openvibe-sdk.mjs');
 
 function loadConfig(env = process.env) {
     const missing = ['OV_CLIENT_ID', 'OV_AUDIENCE', 'OV_SCOPE'].filter((k) => !env[k]);
@@ -47,20 +47,19 @@ function loadConfig(env = process.env) {
         redirectUri,
         origin: new URL(redirectUri).origin,
         port: Number(env.OV_PORT || new URL(redirectUri).port || 3001),
+        registryProxy: ['1', 'true', 'yes'].includes(String(env.OV_REGISTRY_PROXY || '').toLowerCase()),
     };
 }
 
-/** Network's token endpoint, authorization_code for a public app (no secret; `audience` is required). */
-async function exchangePublicCode(client, { clientId, code, codeVerifier, redirectUri, audience, scope }) {
-    return client.json({
-        service: 'network', path: '/oauth/token', method: 'POST', auth: false, retries: 0, idempotencyKey: false,
-        urlencoded: { grant_type: 'authorization_code', client_id: clientId, code, code_verifier: codeVerifier, redirect_uri: redirectUri, audience, scope: scope.join(' ') },
-    });
+/** The SDK's browser bundle, read once: { code, etag }. */
+function loadSdkBundle() {
+    const code = fs.readFileSync(SDK_BUNDLE);
+    return { code, etag: `"${crypto.createHash('sha256').update(code).digest('base64url').slice(0, 27)}"` };
 }
 
 function createApp(config, { fetch, log = console } = {}) {
     const client = createClient({ network: config.network, fetch });
-    const bundle = buildSdkBundle();
+    const bundle = loadSdkBundle();
     const sessions = new Map();          // sid -> { subject, capabilities, expiresAt }
     const secure = config.redirectUri.startsWith('https://');
     const cookie = (sid, maxAge) => `${SESSION_COOKIE}=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
@@ -72,7 +71,10 @@ function createApp(config, { fetch, log = console } = {}) {
         const s = sessions.get(sidOf(req));
         return s && s.expiresAt > Date.now() ? s : null;
     };
-    const publicConfig = JSON.stringify({ network: config.network, clientId: config.clientId, redirectUri: config.redirectUri, scope: config.scope });
+    const publicConfig = JSON.stringify({
+        network: config.network, clientId: config.clientId, redirectUri: config.redirectUri, audience: config.audience, scope: config.scope,
+        registryProxy: config.registryProxy,
+    });
 
     function json(res, status, body, headers = {}) {
         res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
@@ -102,13 +104,19 @@ function createApp(config, { fetch, log = console } = {}) {
             return json(res, 400, { error: 'bad_request' });
         }
         try {
-            const tokens = await exchangePublicCode(client, { ...config, code, codeVerifier });
+            // A public app: no client secret, so the PKCE verifier is what proves this exchange.
+            const tokens = await exchangeCode({
+                network: config.network, fetch, clientId: config.clientId, code, codeVerifier,
+                redirectUri: config.redirectUri, audience: config.audience, scope: config.scope,
+            });
             const d = await client.discover();
-            const claims = await verifyUserToken(tokens.access_token, {
-                jwks: d.jwksUri || `${config.network}/api/.well-known/jwks`, issuer: d.issuer || undefined, audience: config.audience, allowServiceTokens: true, fetch,
+            // acceptSandbox: only a token minted for THIS app is trusted below, so its env is this
+            // app's own environment (a new project's apps are sandbox).
+            const claims = await verifyAppToken(tokens.access_token, {
+                jwks: d.jwksUri || `${config.network}/api/.well-known/jwks`, issuer: d.issuer || undefined, audience: config.audience, acceptSandbox: true, fetch,
             });
             // Developer-app tokens name the person in on_behalf_of and must be for this app.
-            const subject = claims.actor_type === 'app' ? (claims.sub === `app:${config.clientId}` ? claims.on_behalf_of : null) : claims.subject_id;
+            const subject = claims.sub === `app:${config.clientId}` ? claims.on_behalf_of : null;
             if (!subject) return json(res, 400, { error: 'no_subject' });
             for (const [k, v] of sessions) if (v.expiresAt <= Date.now()) sessions.delete(k);     // in-memory store: clean up
             const sid = crypto.randomBytes(32).toString('base64url');
@@ -126,7 +134,7 @@ function createApp(config, { fetch, log = console } = {}) {
         try {
             if (req.method === 'GET' && (url.pathname === '/' || url.pathname === new URL(config.redirectUri).pathname)) return file(res, 'index.html', 'text/html; charset=utf-8');
             if (req.method === 'GET' && url.pathname === '/app.js') return file(res, 'app.js', 'text/javascript; charset=utf-8');
-            if (req.method === 'GET' && url.pathname === '/sdk/openvibe-sdk.js') {
+            if (req.method === 'GET' && url.pathname === '/vendor/openvibe-sdk.mjs') {
                 if (req.headers['if-none-match'] === bundle.etag) { res.writeHead(304, { ETag: bundle.etag }); return res.end(); }
                 res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache', ETag: bundle.etag });
                 return res.end(bundle.code);
@@ -140,7 +148,7 @@ function createApp(config, { fetch, log = console } = {}) {
                 const s = current(req);
                 return s ? json(res, 200, { subject: s.subject, capabilities: s.capabilities, expires_at: new Date(s.expiresAt).toISOString() }) : json(res, 401, { error: 'not_signed_in' });
             }
-            if (req.method === 'GET' && url.pathname === '/api/registry/services') {
+            if (config.registryProxy && req.method === 'GET' && url.pathname === '/api/registry/services') {
                 return json(res, 200, { services: await createRegistryClient(client).services() }, { 'Cache-Control': 'public, max-age=30' });
             }
             if (req.method === 'POST' && url.pathname === '/auth/logout') {
@@ -164,4 +172,4 @@ if (require.main === module) {
     server.listen(config.port, () => console.log(`browser-app: ${config.origin} (redirect URI ${config.redirectUri})`));
 }
 
-module.exports = { loadConfig, createApp, exchangePublicCode };
+module.exports = { loadConfig, createApp };

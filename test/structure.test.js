@@ -2,15 +2,17 @@
 /**
  * Every example is copyable on its own: a README (with how to run it against the real platform),
  * a .env.example naming every variable its code reads, an MIT package.json whose dependencies are
- * pinned tags (no file: links), and a smoke test that the root runner picks up.
+ * pinned tags (no file: links), and a smoke test that the root runner picks up. `npm run e2e`
+ * (the real platform) stays out of npm test and CI, and refuses to run without credentials.
  */
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const EXPECTED = ['browser-app', 'chat-bot', 'event-subscriber', 'media-uploader', 'mod-manifest', 'node-server-app', 'oauth-app', 'tool-job', 'webhook-consumer'];
-const SDK = 'https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.2.2';
+const SDK = 'https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.3.0';
 
 const dirs = fs.readdirSync(path.join(ROOT, 'examples')).filter((d) => fs.statSync(path.join(ROOT, 'examples', d)).isDirectory()).sort();
 assert.deepEqual(dirs, EXPECTED, 'the nine charter examples');
@@ -36,7 +38,7 @@ for (const name of EXPECTED) {
     assert.equal(pkg.scripts.test, 'node test/smoke.test.js', `${name}: npm test runs the smoke test`);
     for (const [dep, spec] of Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })) {
         assert.ok(!/^(file|link):/.test(spec), `${name}: ${dep} is not a local link`);
-        if (dep === 'openvibe-sdk') assert.equal(spec, SDK, `${name}: openvibe-sdk pinned to v0.2.2`);
+        if (dep === 'openvibe-sdk') assert.equal(spec, SDK, `${name}: openvibe-sdk pinned to v0.3.0`);
     }
 
     const readme = fs.readFileSync(path.join(dir, 'README.md'), 'utf8');
@@ -56,6 +58,18 @@ for (const name of EXPECTED) {
 const ci = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
 assert.match(ci, /node-version: 22\.22\.1/);
 assert.match(ci, /npm test/);
+const rootPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+assert.equal(rootPkg.devDependencies['openvibe-sdk'], SDK, 'the root scripts use the same SDK tag');
+
+// npm run e2e: real platform only on demand. Not in CI, not in npm test, and it refuses to start
+// (exit 2, before any network access) without OV_CLIENT_ID / OV_CLIENT_SECRET / OV_PROJECT_ID.
+assert.match(rootPkg.scripts.e2e, /scripts\/e2e\.js/);
+assert.ok(!/e2e/.test(rootPkg.scripts.test), 'npm test does not run the e2e');
+assert.ok(!ci.split('\n').filter((l) => /^\s*-?\s*run:/.test(l)).some((l) => /e2e/.test(l)), 'CI does not run the e2e');
+assert.ok(!fs.existsSync(path.join(ROOT, 'test', 'e2e.test.js')), 'the root runner never picks it up');
+const refused = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'e2e.js')], { env: { PATH: process.env.PATH }, encoding: 'utf8', timeout: 20000 });
+assert.equal(refused.status, 2, refused.stderr);
+assert.match(refused.stderr, /missing OV_CLIENT_ID, OV_CLIENT_SECRET, OV_PROJECT_ID\. Nothing was sent\./);
 assert.equal(JSON.parse(fs.readFileSync(path.join(ROOT, 'STATUS.json'), 'utf8')).stage, 'alpha');
 assert.match(fs.readFileSync(path.join(ROOT, 'LICENSE'), 'utf8'), /^MIT License/);
 console.log('structure: ok');

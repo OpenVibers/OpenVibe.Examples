@@ -45,7 +45,8 @@ npm test
 Validation is offline and works today: `node validate.js mod.json`. The `--registry` check reads
 `https://openvibe.network/api/v1/registry/capabilities/<id>` (public, no credentials).
 
-Publishing is not public yet: registering a mod and managing installs (`games.mod.manage`) is a
-`first-party` capability, install grants (`mods.grant.manage`) are `planned`, and the manifest
-editor and release flow belong to OpenVibe.Codes, which has not launched. Mod ids are assigned
-by that flow; `--new-id` only gives a draft a well-formed id.
+Publishing a mod is not public yet: registering a mod and managing installs (`games.mod.manage`)
+is a `first-party` capability and install grants (`mods.grant.manage`) are `planned`. The
+developer portal, [OpenVibe.Codes](https://openvibe.codes), is where manifests and releases are
+meant to be managed, but a mod still cannot reach Games through it. Mod ids are assigned by that
+flow; `--new-id` only gives a draft a well-formed id.

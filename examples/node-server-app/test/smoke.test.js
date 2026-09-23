@@ -8,9 +8,6 @@ const { createApp, loadConfig } = require('../server');
 const realFetch = globalThis.fetch;
 globalThis.fetch = () => { throw new Error('network access in a smoke test'); };
 
-const APP = 'app_01JEXAMPLESERVER000000000';
-const PRJ = 'prj_01JEXAMPLEPROJECT00000000';
-const SECRET = 'ovsec_node_server_test_secret';
 
 function get(port, path, headers = {}) {
     return new Promise((resolve, reject) => {
@@ -24,10 +21,12 @@ function get(port, path, headers = {}) {
 
 (async () => {
     const platform = createMockPlatform({
-        clients: { [APP]: { secret: SECRET, grants: [{ capability: 'media.object.upload', audience: 'openvibe.media', namespaces: [PRJ] }] } },
         capabilities: [{ id: 'media.object.upload', owner: 'media', visibility: 'public', status: 'active', description: 'Upload an object into a granted namespace' }],
-        contractsVersion: '0.26.0',
+        contractsVersion: '0.28.0',
     });
+    // A sandbox confidential app, as a new project has, with one Media grant and nothing for Tools.
+    const devApp = platform.addApp({ env: 'sandbox', grants: ['media.object.upload'] });
+    const [APP, SECRET, PRJ] = [devApp.id, devApp.secret, devApp.projectId];
     const logs = [];
     const log = { error: (m) => logs.push(m), log: (m) => logs.push(m) };
     const app = createApp(loadConfig({ OV_CLIENT_ID: APP, OV_CLIENT_SECRET: SECRET, OV_AUDIENCES: 'openvibe.media,openvibe.tools' }), { fetch: platform.fetch, log });
@@ -40,7 +39,7 @@ function get(port, path, headers = {}) {
     const s = res.body;
 
     // Discovery: origins and the contracts version check.
-    assert.equal(s.contracts.version, '0.26.0');
+    assert.equal(s.contracts.version, '0.28.0');
     assert.equal(s.contracts.compatible, true);
     const media = s.services.find((x) => x.id === 'media');
     assert.equal(media.origin, 'https://openvibe.media');
@@ -50,6 +49,10 @@ function get(port, path, headers = {}) {
     assert.deepEqual(mediaGrants.capabilities.map((c) => c.id), ['media.object.upload']);
     assert.equal(mediaGrants.capabilities[0].visibility, 'public');
     assert.deepEqual(mediaGrants.namespaces, [PRJ]);
+    assert.equal(mediaGrants.project_id, PRJ);
+    assert.equal(mediaGrants.env, 'sandbox');
+    assert.equal(mediaGrants.subject, `app:${APP}`);
+    assert.ok(Date.parse(mediaGrants.expires_at) > Date.now());
 
     // No grant for openvibe.tools: reported, not thrown.
     const toolsGrants = s.grants.find((g) => g.audience === 'openvibe.tools');
