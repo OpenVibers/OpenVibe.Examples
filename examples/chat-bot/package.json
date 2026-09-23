@@ -1,0 +1,19 @@
+{
+  "name": "openvibe-example-chat-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chat bot: a clearly labelled bot that talks in exactly one configured chat room.",
+  "license": "MIT",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env bot.js",
+    "test": "node test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "ws": "^8.18.0"
+  }
+}

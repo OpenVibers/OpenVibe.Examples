@@ -1,0 +1,18 @@
+{
+  "name": "openvibe-example-event-subscriber",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Event subscriber: realtime subscription and cursor-based pull with gap handling.",
+  "license": "MIT",
+  "main": "subscriber.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env subscriber.js",
+    "test": "node test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.2.2"
+  }
+}

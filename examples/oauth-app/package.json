@@ -1,0 +1,18 @@
+{
+  "name": "openvibe-example-oauth-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OAuth app: server-side authorization code + PKCE exchange with OpenVibe.Network.",
+  "license": "MIT",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.2.2"
+  }
+}

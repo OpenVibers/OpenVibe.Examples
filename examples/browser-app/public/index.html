@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenVibe browser app example</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; color: #1b1b1f; background: #fff; }
+    @media (prefers-color-scheme: dark) { body { color: #e7e7ea; background: #131316; } }
+    code { font-size: 0.9em; }
+    .error { color: #c62828; }
+    ul { padding-left: 1.2rem; }
+  </style>
+</head>
+<body>
+  <h1>OpenVibe browser app example</h1>
+  <p>Sign in with OpenVibe (authorization code + PKCE), then read the public ecosystem registry from this page.</p>
+
+  <section>
+    <h2>Account</h2>
+    <p id="who">Checking your session...</p>
+    <button id="sign-in" hidden>Sign in with OpenVibe</button>
+    <button id="sign-out" hidden>Sign out</button>
+    <p id="auth-error" class="error" hidden></p>
+  </section>
+
+  <section>
+    <h2>Services on the network</h2>
+    <p id="registry-status">Loading the registry...</p>
+    <ul id="services"></ul>
+  </section>
+
+  <noscript><p>This example needs JavaScript: it shows how a browser signs in with the SDK.</p></noscript>
+  <script src="/sdk/openvibe-sdk.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

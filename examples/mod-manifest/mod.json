@@ -1,0 +1,15 @@
+{
+  "id": "mod_01M366EZ0WM23BN1VW7J3WVWRR",
+  "name": "Welcome Sign",
+  "version": "1.0.0",
+  "description": "Places a welcome sign in the town square and greets players when a world opens.",
+  "publisher": { "type": "app", "id": "app_01M366EZ7F3S8VA3MZ3Y7ENCTJ" },
+  "target": "games.browser",
+  "runtime": "games-content@1",
+  "permissions": {
+    "capabilities": ["games.world.announce", "games.prop.place"]
+  },
+  "resources": { "cpuMs": 2, "memoryMb": 16, "storageMb": 1 },
+  "compatibility": { "runtime": ">=1.0.0 <2.0.0", "contracts": ">=0.26.0 <1.0.0" },
+  "homepage": "https://github.com/OpenVibers/OpenVibe.Examples/tree/main/examples/mod-manifest"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "openvibe-example-webhook-consumer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Webhook consumer: verify X-OpenVibe-Signature and process each event exactly once through an inbox.",
+  "license": "MIT",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.2.2",
+    "better-sqlite3": "^11.10.0"
+  }
+}

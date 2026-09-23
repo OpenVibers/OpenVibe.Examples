@@ -1,7 +1,12 @@
 {
   "repository": "OpenVibers/OpenVibe.Examples",
-  "stage": "placeholder",
-  "code": false,
-  "plan": "OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026)",
-  "updated": "2026-09-21"
+  "stage": "alpha",
+  "code": true,
+  "wave": "W20",
+  "version": "0.1.0",
+  "sdk": "openvibe-sdk v0.2.2",
+  "contracts": "openvibe-contracts v0.26.0 (mod-manifest example)",
+  "ci": "every example's smoke test runs on Node 22.22.1 against openvibe-sdk/testing's mock platform and local mocks; none runs against the live platform",
+  "plan": "OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §15.1, §18.9; roadmap Wave 20, §30, ADR-014",
+  "updated": "2026-09-22"
 }

@@ -1,0 +1,17 @@
+{
+  "name": "openvibe-examples",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Executable public integration examples for the OpenVibe platform: SDK, scoped credentials and public APIs only.",
+  "license": "MIT",
+  "repository": "github:OpenVibers/OpenVibe.Examples",
+  "workspaces": [
+    "examples/*"
+  ],
+  "scripts": {
+    "test": "node test/run.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

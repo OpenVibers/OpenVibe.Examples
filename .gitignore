@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.webhook
+data/
+out/
+.job-state.json
+*.db
+*.db-wal
+*.db-shm
