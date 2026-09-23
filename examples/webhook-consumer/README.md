@@ -1,7 +1,8 @@
 # Webhook consumer
 
 Receive OpenVibe.Events deliveries for your project's events over HTTPS, verify
-`X-OpenVibe-Signature`, and handle every event **exactly once** even though delivery is at least once.
+`X-OpenVibe-Signature-V2` (signature v2, with a replay window), and handle every event **exactly once**
+even though delivery is at least once.
 
 ```bash
 node --env-file=.env subscribe.js https://hooks.example.com/webhooks/openvibe      # app.<project_key>.*
@@ -64,6 +65,12 @@ endpoints: a private address is `422 events.endpoint_not_allowed`).
 Limits: a sandbox project may have 5 subscriptions. Sandbox subscriptions receive sandbox events
 only. When the app is revoked or loses `events.app.subscribe`, Events disables its subscriptions.
 
-Signature scheme note: the HMAC covers the body only, with no timestamp, so a captured delivery
-can be replayed later. The inbox makes a replay harmless (it is a duplicate), which is why the
-inbox is not optional.
+Signature scheme note: every delivery carries `X-OpenVibe-Timestamp` and
+`X-OpenVibe-Signature-V2: t=<unix seconds>,v2=<hex HMAC-SHA256 of "<t>.<raw body>">`, keyed with the
+subscription secret, besides the older body-only `X-OpenVibe-Signature` (v1). The consumer calls
+`parseDelivery(raw, headers, secret, { requireV2: true })`: it refuses a delivery whose `t` is more
+than ±300 s from its own clock, and it refuses a delivery with no v2 header, so a captured delivery
+cannot be replayed later with the v2 header stripped off. Keep the server's clock synced (NTP).
+Events signs every attempt afresh, so retries and replays from its dead-letter queue arrive inside
+the window. The inbox is still not optional: delivery is at least once, so a retry after a lost 2xx
+is a duplicate the inbox acknowledges without handling it again.

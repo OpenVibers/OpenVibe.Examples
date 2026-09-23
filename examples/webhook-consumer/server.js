@@ -7,11 +7,14 @@
  *   node --env-file=.env server.js        # POST http://localhost:3003/webhooks/openvibe
  *
  * A delivery is POSTed as { "event": <events.event-envelope@1>, "seq": <n> } with
- * X-OpenVibe-Signature: sha256=<HMAC-SHA256 of the raw body with the subscription secret>.
+ * X-OpenVibe-Timestamp: <unix seconds> and
+ * X-OpenVibe-Signature-V2: t=<that timestamp>,v2=<HMAC-SHA256 of "<t>.<raw body>" with the subscription secret>
+ * (plus the older body-only X-OpenVibe-Signature, which this consumer does not accept on its own).
  *
  *   1. Read the RAW body (the signature covers the exact bytes; never re-serialize JSON first).
- *   2. openvibe-sdk/events parseDelivery() checks the signature in constant time and parses it.
- *      A bad signature is 401 and nothing else is said.
+ *   2. openvibe-sdk/events parseDelivery(..., { requireV2: true }) checks the v2 signature in
+ *      constant time, refuses a timestamp more than 300 s from this clock or a missing v2 header
+ *      (a replayed capture), and parses it. A bad signature is 401 and nothing else is said.
  *   3. Delivery is at least once (retries, replays). inbox.once() records the event id and runs
  *      the handler in ONE SQLite transaction, so a repeat is answered 200 without running it again,
  *      and a handler that throws leaves no receipt: the 500 makes Events retry later.
@@ -68,7 +71,7 @@ function createConsumer(config, { db = openDatabase(config.dbPath), handle = () 
 
     function verify(raw, headers) {
         for (const secret of config.secrets) {
-            const d = parseDelivery(raw, headers, secret);
+            const d = parseDelivery(raw, headers, secret, { requireV2: true });
             if (d) return d;
         }
         return null;

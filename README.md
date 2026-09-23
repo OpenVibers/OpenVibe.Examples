@@ -7,7 +7,7 @@
 Node 22.22.1 against `openvibe-sdk/testing`'s mock platform (no network). `npm run e2e` runs three
 of them (Media, Events pull, a Tools job) against the real platform with your own sandbox app; it
 is not part of CI or `npm test`, and it was not run against production as part of this release.  
-**Built on:** [openvibe-sdk v0.3.1](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.3.1), and
+**Built on:** [openvibe-sdk v0.4.0](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.4.0), and
 openvibe-contracts v0.28.0 for the mod manifest.  
 **Plan:** OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §15.1
 and §18.9; roadmap Wave 20, §30 (public SDK surface), ADR-014 (developer projects).  
@@ -22,7 +22,7 @@ OpenVibe services themselves are AGPL-3.0.
 | [node-server-app](examples/node-server-app) | Client-credentials app token per audience and what it carries, registry discovery, contracts version check, trace propagation | `openvibe-sdk/auth` (`getTokenInfo`), `/registry`, `/core` |
 | [media-uploader](examples/media-uploader) | Upload into, read from and delete in your project's Media tenant; sandbox files come back with signed URLs | `openvibe-sdk/media` |
 | [event-subscriber](examples/event-subscriber) | Publish to your project's topic `app.<project_key>.*`, pull it with a durable cursor, gaps; anonymous realtime for public events | `openvibe-sdk/events` (`createAppEvents`), `/realtime` |
-| [webhook-consumer](examples/webhook-consumer) | An app subscription on your own topic; `X-OpenVibe-Signature` verified on the raw body; exactly-once handling with an inbox; secret rotation | `openvibe-sdk/events` (`createAppEvents`, `parseDelivery`, `createInbox`) |
+| [webhook-consumer](examples/webhook-consumer) | An app subscription on your own topic; `X-OpenVibe-Signature-V2` (±300 s replay window) verified on the raw body; exactly-once handling with an inbox; secret rotation | `openvibe-sdk/events` (`createAppEvents`, `parseDelivery`, `createInbox`) |
 | [tool-job](examples/tool-job) | An OpenVibe.Tools job submitted once (idempotency key), reattached after a restart, its SSE stream resumed with `Last-Event-ID` | `openvibe-sdk/jobs` |
 | [oauth-app](examples/oauth-app) | Authorization code + PKCE for a confidential app, exchange on the server, offline app-token verification, session hygiene | `openvibe-sdk/auth` |
 | [chat-bot](examples/chat-bot) | A bot on Chat's WebSocket protocol that stays in its one configured room and always identifies as a bot | Chat `/ws/chat` protocol (no SDK client: Chat is first-party) |
@@ -163,7 +163,7 @@ Repository checks (`test/`):
   value in a `.env.example`.
 - `structure.test.js` checks the nine examples are complete and copyable: README with "What it
   proves" and "Run it against the real platform", a `.env.example` that names every variable the
-  code reads, MIT license, `openvibe-sdk` pinned to the v0.3.1 tag, no `file:` links; and that
+  code reads, MIT license, `openvibe-sdk` pinned to the v0.4.0 tag, no `file:` links; and that
   `npm run e2e` is outside CI and `npm test` and refuses to start without its variables.
 
 ## Layout
@@ -190,7 +190,7 @@ test/public-surface.test.js, test/structure.test.js
 
 ## Depends on
 
-- OpenVibe.SDK (v0.3.1), OpenVibe.Contracts (v0.28.0, mod manifest only)
+- OpenVibe.SDK (v0.4.0), OpenVibe.Contracts (v0.28.0, mod manifest only)
 - at run time against the real platform: Network (tokens, registry, developer projects), Events,
   Media, Tools, Chat (on openvibe.live)
 

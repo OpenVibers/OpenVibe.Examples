@@ -11,7 +11,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { createMockPlatform } = require('openvibe-sdk/testing');
-const { signDelivery, projectKey, appSource } = require('openvibe-sdk/events');
+const { signDelivery, signDeliveryHeaders, projectKey, appSource } = require('openvibe-sdk/events');
 const { createConsumer, loadConfig, openDatabase } = require('../server');
 const { createSubscription, loadConfig: loadSubscribeConfig } = require('../subscribe');
 
@@ -100,13 +100,16 @@ const ENDPOINT = 'https://hooks.example.com/webhooks/openvibe';
     assert.deepEqual([round.delivered, round.attempts[0].attempt], [1, 2]);
     assert.deepEqual(handled, [e1.event_id, e2.event_id]);
 
-    // Attacks: wrong secret, tampered body, missing signature: 401 and no side effect.
+    // Attacks: wrong secret, tampered body, missing signature, v1 only, stale v2: 401 and no side effect.
     const last = sent.at(-1);
     const e3 = appEvent('order.refunded');
     const forgedBody = last.body.replaceAll(e2.event_id, e3.event_id);
     assert.equal((await replay(last, { 'X-OpenVibe-Signature': signDelivery(forgedBody, 'whsec_not_the_secret'), 'X-OpenVibe-Event-Id': e3.event_id }, forgedBody)).status, 401);
     assert.equal((await replay(last, { 'X-OpenVibe-Event-Id': e3.event_id }, forgedBody)).status, 401, 'changed bytes, old signature');
-    assert.equal((await replay(last, { 'X-OpenVibe-Signature': '' })).status, 401);
+    assert.equal((await replay(last, { 'X-OpenVibe-Signature': '', 'X-OpenVibe-Signature-V2': '' })).status, 401);
+    const { 'X-OpenVibe-Signature-V2': _v2, ...v1only } = last.headers;
+    assert.equal((await realFetch(local, { method: 'POST', headers: v1only, body: last.body })).status, 401, 'v1 only (v2 stripped): refused');
+    assert.equal((await replay(last, signDeliveryHeaders(last.body, created.secret, { now: Date.now() - 301000 }))).status, 401, 'stale v2 (outside the 300 s window): refused');
     // Header and signed body disagree on the event id: refused.
     assert.equal((await replay(last, { 'X-OpenVibe-Event-Id': e3.event_id })).status, 400);
     assert.deepEqual(handled, [e1.event_id, e2.event_id]);
