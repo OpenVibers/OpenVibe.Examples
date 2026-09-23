@@ -15,3 +15,16 @@ jobs:
       # Every example's smoke test runs against openvibe-sdk/testing's mock platform (and a small
       # Chat WebSocket mock for chat-bot). No test reaches the network or a real service. `npm run e2e` (the real platform, needs credentials) is never run here.
       - run: npm test
+  developer-path:
+    # The Wave 20 exit check (scripts/developer-path.js: account, project, sandbox app, grants,
+    # Media upload, app events, credential rotation and revocation, archive) step for step against
+    # openvibe-sdk/testing's mock platform. The real-platform run is started by a person only; the
+    # script refuses to run in CI against the production Network.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.1
+      - run: npm ci
+      - run: npm run developer-path:mock

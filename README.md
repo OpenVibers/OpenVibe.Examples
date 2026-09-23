@@ -6,7 +6,9 @@
 **Status:** alpha, 0.2.0 (roadmap Wave 20). Nine examples, each with a smoke test that CI runs on
 Node 22.22.1 against `openvibe-sdk/testing`'s mock platform (no network). `npm run e2e` runs three
 of them (Media, Events pull, a Tools job) against the real platform with your own sandbox app; it
-is not part of CI or `npm test`, and it was not run against production as part of this release.  
+is not part of CI or `npm test`, and it was not run against production as part of this release.
+`npm run developer-path` is the Wave 20 exit check (account to Media and Events to revoked
+credentials); CI runs it against the mock platform, and a person runs it against production.  
 **Built on:** [openvibe-sdk v0.4.0](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.4.0), and
 openvibe-contracts v0.28.0 for the mod manifest.  
 **Plan:** OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §15.1
@@ -119,6 +121,49 @@ Verified in production on 2026-09-23 with a brand-new account, using the public 
 - **Discovery.** `/.well-known/openvibe` and `/api/v1/registry/*` answer any origin (CORS), so a
   browser page reads them directly.
 
+## Developer path check
+
+`scripts/developer-path.js` is the roadmap Wave 20 exit check as a repeatable script: a developer
+goes from an account to a working Media and Events integration with public endpoints, the SDK and
+scoped credentials only, then rotates and revokes those credentials and cleans up.
+
+| Step | What it does |
+|---|---|
+| 1. account | registers `OV_E2E_USERNAME` (`--register`) or signs in at `/api/auth/*`, or uses `OV_USER_TOKEN` |
+| 2. discovery | reads `/.well-known/openvibe` as any origin may |
+| 3. project | creates a sandbox project with `openvibe-sdk/projects` |
+| 4. app | creates a confidential sandbox app; its secret stays in memory |
+| 5. grants | requests `media.object.upload`, `media.object.read`, `events.app.publish`, `events.app.read`; all must be approved at once |
+| 6. media | [media-uploader](examples/media-uploader): upload a small file, read it back, delete it |
+| 7. events | [event-subscriber](examples/event-subscriber): publish `app.<project_key>.developer_path.ran`, pull it with a cursor |
+| 8. credentials | rotates with no overlap and revokes the first credential; the old secret must be refused at `/oauth/token`, the new one must work |
+| 9. cleanup | archives the project, even when an earlier step failed; the app's secret must then be refused |
+
+**In CI**, on every push, `npm run developer-path:mock` runs the same code against
+`openvibe-sdk/testing`'s mock platform (the `developer-path` job; `test/developer-path.test.js`
+also checks it leaves nothing behind, never prints a secret, and still cleans up after a failure).
+The mock has no account API, so `scripts/developer-path-mock.js` adds register and login routes
+that mint mock user tokens; every later step is the platform mock's own.
+
+**Against production** it runs only when a person starts it. Credentials come from the
+environment (or `./.env`) only:
+
+```bash
+OV_E2E_USERNAME=… OV_E2E_PASSWORD=… npm run developer-path                 # an existing account
+OV_E2E_USERNAME=… OV_E2E_PASSWORD=… npm run developer-path -- --register    # create that account first
+OV_USER_TOKEN=… npm run developer-path                                      # a Network user access token
+```
+
+It creates one project per run and archives it at the end (Network keeps archived projects).
+It refuses to start without credentials, and refuses in CI against the production Network (`CI`
+set and `OV_NETWORK_URL` unset or `https://openvibe.network`), so it can later run in CI against
+an integration environment but never against production by accident. It masks every password,
+secret and token in its output and prints signed URLs without their signature. Exit `0` when all
+nine steps passed, `1` when one failed, `2` when it refused to start.
+
+It does not yet cover webhook delivery to an external endpoint (that needs a public https host)
+or publishing an app release in OpenVibe.Codes.
+
 ## What still does not work
 
 - **No consent screen.** Network's account chooser names the app but does not list the
@@ -164,17 +209,22 @@ Repository checks (`test/`):
 - `structure.test.js` checks the nine examples are complete and copyable: README with "What it
   proves" and "Run it against the real platform", a `.env.example` that names every variable the
   code reads, MIT license, `openvibe-sdk` pinned to the v0.4.0 tag, no `file:` links; and that
-  `npm run e2e` is outside CI and `npm test` and refuses to start without its variables.
+  `npm run e2e` is outside CI and `npm test` and refuses to start without its variables; and that
+  CI runs the developer path against the mock platform only.
+- `developer-path.test.js` runs the developer path against the mock platform and checks the
+  result (see [Developer path check](#developer-path-check)).
 
 ## Layout
 
 ```
 examples/<name>/          one example: README.md, .env.example, package.json, code, test/smoke.test.js
 scripts/e2e.js            npm run e2e: three examples against the real platform (on demand only)
+scripts/developer-path.js npm run developer-path: the Wave 20 exit check against the real platform (on demand only)
+scripts/developer-path-mock.js  npm run developer-path:mock: the same flow against the mock platform (CI)
 scripts/new-sandbox-app.js  npm run new-app: project + sandbox app + grants via openvibe-sdk/projects
 test/run.js               runs every smoke test and the repository checks (npm test)
 test/public-surface.test.js, test/structure.test.js
-.github/workflows/ci.yml  Node 22.22.1: npm ci && npm test
+.github/workflows/ci.yml  Node 22.22.1: npm test; the developer path against the mock platform
 ```
 
 ## Owns
@@ -182,6 +232,7 @@ test/public-surface.test.js, test/structure.test.js
 - the nine charter examples: vanilla browser app, Node server app, webhook consumer, event
   subscriber, Media uploader, Chat bot, tool/job example, mod manifest example, OAuth app example
 - the on-demand end-to-end run (`npm run e2e`) and the sandbox-app setup script
+- the developer path check (`npm run developer-path`, and `developer-path:mock` in CI)
 
 ## Does not own
 
@@ -197,15 +248,18 @@ test/public-surface.test.js, test/structure.test.js
 ## Acceptance
 
 - CI runs every example: **yes**, against the SDK's mock platform (and a small Chat WebSocket
-  mock for chat-bot; no network). Against the real platform on demand: `npm run e2e` with a sandbox app's
-  credentials; there is no CI project with credentials.
+  mock for chat-bot; no network), and the developer path check against the same mock. Against
+  the real platform on demand: `npm run e2e` with a sandbox app's credentials and
+  `npm run developer-path` with an account; there is no integration environment with
+  credentials for CI.
 - A new developer goes from account creation to a working Media, event and capability
   integration using only public documentation, the SDK and scoped credentials: the platform path
   was verified in production on 2026-09-23 (see
   [How the platform works](#how-the-platform-works-for-a-sandbox-app)) by a curl script against the
-  public endpoints, not by the SDK or these examples, and that script is not committed to any
-  repository yet. `npm run e2e` walks three of the nine examples along the same path; it has not
-  been run against production. **Partly met.**
+  public endpoints, not by the SDK or these examples. That check is now committed as
+  `npm run developer-path` (SDK and examples, plus credential rotation and revocation), runs in CI
+  against the mock platform, and has not yet been run against production. `npm run e2e` walks
+  three of the nine examples along the same path. **Partly met.**
 - No example needs a loopback-only internal key or first-party database access: **yes**, enforced
   by `test/public-surface.test.js`.
 

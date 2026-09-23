@@ -70,6 +70,15 @@ assert.ok(!fs.existsSync(path.join(ROOT, 'test', 'e2e.test.js')), 'the root runn
 const refused = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'e2e.js')], { env: { PATH: process.env.PATH }, encoding: 'utf8', timeout: 20000 });
 assert.equal(refused.status, 2, refused.stderr);
 assert.match(refused.stderr, /missing OV_CLIENT_ID, OV_CLIENT_SECRET, OV_PROJECT_ID\. Nothing was sent\./);
+
+// npm run developer-path: the Wave 20 exit check. CI runs it against the mock platform only
+// (npm run developer-path:mock); the real-platform script is never a CI step and refuses in CI
+// against production (test/developer-path.test.js).
+assert.match(rootPkg.scripts['developer-path'], /scripts\/developer-path\.js/);
+assert.equal(rootPkg.scripts['developer-path:mock'], 'node scripts/developer-path-mock.js');
+const ciRuns = ci.split('\n').filter((l) => /^\s*-?\s*run:/.test(l)).map((l) => l.trim());
+assert.ok(ciRuns.includes('- run: npm run developer-path:mock'), 'CI runs the developer path against the mock platform');
+assert.ok(!ciRuns.some((l) => /developer-path(?!:mock)|scripts\/developer-path\.js/.test(l)), 'CI never runs the real-platform developer path');
 assert.equal(JSON.parse(fs.readFileSync(path.join(ROOT, 'STATUS.json'), 'utf8')).stage, 'alpha');
 assert.match(fs.readFileSync(path.join(ROOT, 'LICENSE'), 'utf8'), /^MIT License/);
 console.log('structure: ok');

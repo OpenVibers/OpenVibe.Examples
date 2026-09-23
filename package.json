@@ -11,7 +11,9 @@
   "scripts": {
     "test": "node test/run.js",
     "e2e": "node --env-file-if-exists=.env scripts/e2e.js",
-    "new-app": "node --env-file-if-exists=.env scripts/new-sandbox-app.js"
+    "new-app": "node --env-file-if-exists=.env scripts/new-sandbox-app.js",
+    "developer-path": "node --env-file-if-exists=.env scripts/developer-path.js",
+    "developer-path:mock": "node scripts/developer-path-mock.js"
   },
   "engines": {
     "node": ">=22"
