@@ -202,8 +202,10 @@ test/public-surface.test.js, test/structure.test.js
 - A new developer goes from account creation to a working Media, event and capability
   integration using only public documentation, the SDK and scoped credentials: the platform path
   was verified in production on 2026-09-23 (see
-  [How the platform works](#how-the-platform-works-for-a-sandbox-app)); `npm run e2e` walks it with
-  these examples.
+  [How the platform works](#how-the-platform-works-for-a-sandbox-app)) by a curl script against the
+  public endpoints, not by the SDK or these examples, and that script is not committed to any
+  repository yet. `npm run e2e` walks three of the nine examples along the same path; it has not
+  been run against production. **Partly met.**
 - No example needs a loopback-only internal key or first-party database access: **yes**, enforced
   by `test/public-surface.test.js`.
 
