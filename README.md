@@ -78,7 +78,7 @@ npm run e2e          # reads ./.env: OV_CLIENT_ID, OV_CLIENT_SECRET, OV_PROJECT_
 
 It uploads a small file to your Media tenant, reads it back and deletes it; publishes
 `app.<project_key>.e2e.ran` and pulls your topic until it finds it; converts a 1x1 PNG to WebP on
-`img.openvibe.tools`, following the job's events. It prints each step (never the secret, a token
+`openvibe.tools` (the gateway's jobs facade), following the job's events. It prints each step (never the secret, a token
 or a URL signature) and exits `1` if a step failed, `2` if a variable is missing.
 
 **4. Run the examples.** Each reads `.env` in its own folder (`cp .env.example .env`), or point it

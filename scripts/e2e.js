@@ -15,7 +15,7 @@
  *                       metadata back, delete it
  *   2. event-subscriber publish app.<project_key>.e2e.ran, then pull the project's topic from just
  *                       before it with a durable cursor and find it
- *   3. tool-job         convert a 1x1 PNG to WebP on img.openvibe.tools, following the job's events
+ *   3. tool-job         convert a 1x1 PNG to WebP through the openvibe.tools jobs facade, following the job's events
  *
  * It refuses to start without the three variables, prints what each step did, and never prints a
  * secret: the client secret and anything shaped like a token are masked in all output, and signed

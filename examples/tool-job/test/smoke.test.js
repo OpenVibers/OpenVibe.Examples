@@ -58,7 +58,7 @@ const TOOLS = ['tools.job.create', 'tools.job.read'];
     assert.equal(fs.readFileSync(files[0], 'utf8'), 'converted:not really a png, the mock does not care');
     assert.equal(fs.existsSync(env.OV_JOB_STATE), false, 'state cleared once done');
     assert.equal(submits(), 1);
-    assert.ok(platform.stats.requests.some((r) => r.url === 'https://img.openvibe.tools/api/v1/jobs'), 'img.process went to the img satellite (the default)');
+    assert.ok(platform.stats.requests.some((r) => r.url === 'https://openvibe.tools/api/v1/jobs'), 'img.process went to the Tools gateway (its /api/v1/jobs facade, the default)');
     const submitCall = platform.stats.requests.find((r) => r.method === 'POST' && r.url.endsWith('/api/v1/jobs'));
     assert.match(submitCall.headers['idempotency-key'], /^ex-[0-9a-f]{40}$/);
 

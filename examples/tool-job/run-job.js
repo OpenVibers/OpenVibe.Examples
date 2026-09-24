@@ -35,7 +35,7 @@ function loadConfig(env = process.env) {
         network: env.OV_NETWORK_URL || 'https://openvibe.network',
         clientId: env.OV_CLIENT_ID,
         clientSecret: env.OV_CLIENT_SECRET,
-        toolsUrl: env.OV_TOOLS_JOBS_URL || 'https://img.openvibe.tools',
+        toolsUrl: env.OV_TOOLS_JOBS_URL || 'https://openvibe.tools',   // the gateway's /api/v1/jobs facade routes img.process to the img satellite
         type: env.OV_JOB_TYPE || 'img.process',
         input,
         outDir: env.OV_OUT_DIR || path.join(process.cwd(), 'out'),

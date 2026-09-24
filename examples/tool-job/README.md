@@ -42,7 +42,7 @@ npm test
 ```
 
 Network and Tools are `openvibe-sdk/testing`'s mock platform with `jobs` enabled, answering at
-`https://img.openvibe.tools` like the real satellite (an `img.process` handler plays queued →
+`https://openvibe.tools` like the real gateway (an `img.process` handler plays queued →
 running → progress → succeeded; `acceptSandbox: ['openvibe.tools']` because Tools accepts sandbox
 app tokens on jobs); `dropJobStreams()` cuts the event stream after the first event.
 
@@ -53,7 +53,7 @@ app tokens on jobs); `dropJobStreams()` cuts the event stream after the first ev
 2. `cp .env.example .env`, fill in `OV_CLIENT_ID` and `OV_CLIENT_SECRET`.
 3. `node --env-file=.env run-job.js ./photo.png`
 
-`img.process` runs on `https://img.openvibe.tools` (`input.tool` is one of its tools, for example
+`img.process` runs on the img satellite behind `https://openvibe.tools` (`input.tool` is one of its tools, for example
 `convert` with `format`); audio and docs jobs run on their own satellites (set
 `OV_TOOLS_JOBS_URL`, `OV_JOB_TYPE`, `OV_JOB_INPUT`). Tools accepts sandbox app tokens on
 `/api/v1/jobs`: a sandbox project may have 2 active jobs of at most 30 minutes, and its results are
