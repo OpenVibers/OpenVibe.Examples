@@ -4,32 +4,13 @@ on:
     branches: [main]
   pull_request:
 jobs:
+  # install, node --check, tests, contract and pin-drift checks: the shared test job (WS-Q task 1).
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.22.1   # the Node version the platform's services run
-      - run: npm ci             # one install for every example (npm workspaces)
-      # Every example's smoke test runs against openvibe-sdk/testing's mock platform (and a small
-      # Chat WebSocket mock for chat-bot). No test reaches the network or a real service. `npm run e2e` (the real platform, needs credentials) is never run here.
-      - run: npm test
-      - name: pin drift (openvibe-* library pins)
-        run: curl -fsSL https://raw.githubusercontent.com/OpenVibers/OpenVibe.Shared/main/scripts/pin-drift.js | node - "$GITHUB_WORKSPACE"
-  developer-path:
-    # The Wave 20 exit check (scripts/developer-path.js: account, project, sandbox app, grants,
-    # Media upload, app events, credential rotation and revocation, archive) step for step against
-    # openvibe-sdk/testing's mock platform. The real-platform run is started by a person only; the
-    # script refuses to run in CI against the production Network.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.22.1
-      - run: npm ci
-      - run: npm run developer-path:mock
-  # Secret scan (gitleaks) and dependency audit, shared by every OpenVibers repo (Track Q).
+    uses: OpenVibers/OpenVibe.Shared/.github/workflows/test.yml@66b76f868ea8228aad7811309eafef3726b036f3
+    with:
+      install: npm ci                 # one install for every example (npm workspaces)
+      syntax-dirs: scripts
+      extra: npm run developer-path:mock   # the developer path end to end against mocks
+  # Secret scan (gitleaks) and dependency audit, shared by every OpenVibers repo.
   security:
-    uses: OpenVibers/OpenVibe.Shared/.github/workflows/security.yml@83c998b65424fb97e6f6de55ad9cc5981767e89c
+    uses: OpenVibers/OpenVibe.Shared/.github/workflows/security.yml@66b76f868ea8228aad7811309eafef3726b036f3
