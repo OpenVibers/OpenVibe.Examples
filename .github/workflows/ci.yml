@@ -15,6 +15,8 @@ jobs:
       # Every example's smoke test runs against openvibe-sdk/testing's mock platform (and a small
       # Chat WebSocket mock for chat-bot). No test reaches the network or a real service. `npm run e2e` (the real platform, needs credentials) is never run here.
       - run: npm test
+      - name: pin drift (openvibe-* library pins)
+        run: curl -fsSL https://raw.githubusercontent.com/OpenVibers/OpenVibe.Shared/main/scripts/pin-drift.js | node - "$GITHUB_WORKSPACE"
   developer-path:
     # The Wave 20 exit check (scripts/developer-path.js: account, project, sandbox app, grants,
     # Media upload, app events, credential rotation and revocation, archive) step for step against
