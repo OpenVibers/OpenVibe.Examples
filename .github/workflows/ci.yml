@@ -9,6 +9,7 @@ jobs:
     uses: OpenVibers/OpenVibe.Shared/.github/workflows/test.yml@66b76f868ea8228aad7811309eafef3726b036f3
     with:
       install: npm ci                 # one install for every example (npm workspaces)
+      test: npm test                  # every example's tests
       syntax-dirs: scripts
       extra: npm run developer-path:mock   # the developer path end to end against mocks
   # Secret scan (gitleaks) and dependency audit, shared by every OpenVibers repo.

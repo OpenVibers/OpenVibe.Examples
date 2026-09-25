@@ -56,7 +56,8 @@ for (const name of EXPECTED) {
 
 // The root runner and CI.
 const ci = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
-assert.match(ci, /node-version: 22\.22\.1/);
+// CI runs on Node 22: the shared test workflow (its default, 22.22.1) or an explicit pin.
+assert.match(ci, /OpenVibe\.Shared\/\.github\/workflows\/test\.yml@[0-9a-f]{40}|node-version: 22\.22\.1/);
 assert.match(ci, /npm test/);
 const rootPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 assert.equal(rootPkg.devDependencies['openvibe-sdk'], SDK, 'the root scripts use the same SDK tag');
