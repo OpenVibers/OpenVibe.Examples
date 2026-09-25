@@ -24,6 +24,7 @@
  *   OV_E2E_USERNAME=… OV_E2E_PASSWORD=… npm run developer-path              # sign in
  *   OV_E2E_USERNAME=… OV_E2E_PASSWORD=… npm run developer-path -- --register  # create that account first
  *   OV_USER_TOKEN=… npm run developer-path                                    # an existing Network token
+ *   … npm run developer-path -- --result <file>   also write the outcome (step names, ok) as JSON
  *
  * Credentials come from the environment only (or ./.env). It refuses to start without them, and
  * refuses to run in CI against the production Network (CI set and OV_NETWORK_URL unset or
@@ -270,11 +271,27 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     else return refuse(`developer-path: missing ${register ? 'OV_E2E_USERNAME and OV_E2E_PASSWORD' : 'OV_E2E_USERNAME and OV_E2E_PASSWORD, or OV_USER_TOKEN'}. Nothing was sent.`);
     const onSecret = maskOutput();
     console.log(`OpenVibe developer path against ${network}\n`);
+    const started = Date.now();
     const result = await runDeveloperPath({ network, account, onSecret });
+    // --result <file>: a JSON record for the scheduled production run (OpenVibe.Host openvibe-devpath.timer,
+    // shown on openvibe.network/status): step names and outcomes only — never an error text, URL, id or secret.
+    const out = argv.indexOf('--result');
+    if (out >= 0 && argv[out + 1]) writeResult(argv[out + 1], result, { network, started });
     return result.ok ? 0 : 1;
 }
 
-module.exports = { runDeveloperPath, GRANTS, STEPS, PRODUCTION_NETWORK };
+/** The outcome as JSON (written to file.tmp, then renamed): step names and ok only. → the record */
+function writeResult(file, result, { network, started = Date.now(), now = Date.now() } = {}) {
+    const record = {
+        ok: !!result.ok, network, started_at: new Date(started).toISOString(), finished_at: new Date(now).toISOString(),
+        steps: result.steps.map((st) => ({ name: st.name, ok: !!st.ok, ...(st.skipped ? { skipped: true } : {}) })),
+    };
+    fs.writeFileSync(`${file}.tmp`, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o644 });
+    fs.renameSync(`${file}.tmp`, file);
+    return record;
+}
+
+module.exports = { runDeveloperPath, writeResult, GRANTS, STEPS, PRODUCTION_NETWORK };
 
 if (require.main === module) {
     main().then((code) => { process.exitCode = code; }, (err) => { console.error(`developer-path: ${describeError(err)}`); process.exitCode = 1; });

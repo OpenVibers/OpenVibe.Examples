@@ -61,5 +61,20 @@ const CLI = path.join(__dirname, '..', 'scripts', 'developer-path.js');
     const ciExplicit = run({ CI: 'true', OV_NETWORK_URL: 'https://openvibe.network/', OV_USER_TOKEN: 'x' });
     assert.equal(ciExplicit.status, 2, 'also with OV_NETWORK_URL set to production');
 
+    // --result: the outcome for the scheduled production run — step names and ok only.
+    {
+        const fsx = require('node:fs'); const osx = require('node:os'); const px = require('node:path');
+        const { writeResult } = require('../scripts/developer-path');
+        const { result } = await runAgainstMock({});
+        const file = px.join(fsx.mkdtempSync(px.join(osx.tmpdir(), 'ov-devpath-')), 'last.json');
+        const rec = writeResult(file, result, { network: 'https://openvibe.network', started: Date.now() - 1000 });
+        const back = JSON.parse(fsx.readFileSync(file, 'utf8'));
+        assert.deepEqual(back, rec);
+        assert.equal(back.ok, true);
+        assert.ok(back.steps.length >= 9 && back.steps.every((st) => Object.keys(st).every((k) => ['name', 'ok', 'skipped'].includes(k))), 'names and outcomes only');
+        assert.ok(!JSON.stringify(back).match(/secret|token|password|prj_|app_/i), 'no secret or id in the record');
+        assert.ok(!fsx.existsSync(`${file}.tmp`));
+    }
+
     console.log('developer-path: ok');
 })().catch((err) => { console.error(err); process.exit(1); });
