@@ -164,6 +164,34 @@ nine steps passed, `1` when one failed, `2` when it refused to start.
 It does not yet cover webhook delivery to an external endpoint (that needs a public https host)
 or publishing an app release in OpenVibe.Codes.
 
+### Tools job proof
+
+`scripts/tools-job-proof.js` (`npm run tools-job-proof`) is the scheduled end-to-end proof of
+OpenVibe.Tools jobs (roadmap WS-L task 4), again with the SDK only. A **service principal** runs it,
+because sandbox jobs are never announced to Events or copied to Media:
+
+1. **token**: client credentials for `tools.job.create` and `tools.job.read` (`openvibe.tools`) and
+   `events.event.read` (`openvibe.events`).
+2. **cursor**: the head of the Events store for `tools.job.*`, before anything is submitted.
+3. **submit**: `img.process` converts a small generated PNG to WebP.
+4. **reattach**: the progress stream is dropped after its first event and reattached with
+   `Last-Event-ID`, as the Tools UI does after a reload. Every later event must arrive once, in
+   order, up to `job.succeeded`.
+5. **result**: the job reads back `succeeded`, and its file is stored in Media (`storage: "media"`
+   with a media id). The download must be a WebP that matches the listed sha256. Tools keeps no
+   local copy of a Media-stored result.
+6. **events**: `tools.job.created`, `tools.job.started` and `tools.job.succeeded` for the job are
+   in the Events store.
+
+```bash
+OV_CLIENT_ID=… OV_CLIENT_SECRET=… npm run tools-job-proof [-- --result last.json]
+```
+
+`OV_OAUTH_CLIENT_ID` and `OV_OAUTH_CLIENT_SECRET` also work; Network's service-principal setup
+writes those names. OpenVibe.Host runs it every six hours as the `probe` principal
+(`openvibe-toolsjob.timer`). CI runs it against the mock platform (`test/tools-job-proof.test.js`),
+and it refuses to run in CI against production.
+
 ## What still does not work
 
 - **No consent screen.** Network's account chooser names the app but does not list the

@@ -13,7 +13,8 @@
     "e2e": "node --env-file-if-exists=.env scripts/e2e.js",
     "new-app": "node --env-file-if-exists=.env scripts/new-sandbox-app.js",
     "developer-path": "node --env-file-if-exists=.env scripts/developer-path.js",
-    "developer-path:mock": "node scripts/developer-path-mock.js"
+    "developer-path:mock": "node scripts/developer-path-mock.js",
+    "tools-job-proof": "node --env-file-if-exists=.env scripts/tools-job-proof.js"
   },
   "engines": {
     "node": ">=22"
