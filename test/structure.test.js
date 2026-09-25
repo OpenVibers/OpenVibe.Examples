@@ -77,8 +77,9 @@ assert.match(refused.stderr, /missing OV_CLIENT_ID, OV_CLIENT_SECRET, OV_PROJECT
 // against production (test/developer-path.test.js).
 assert.match(rootPkg.scripts['developer-path'], /scripts\/developer-path\.js/);
 assert.equal(rootPkg.scripts['developer-path:mock'], 'node scripts/developer-path-mock.js');
-const ciRuns = ci.split('\n').filter((l) => /^\s*-?\s*run:/.test(l)).map((l) => l.trim());
-assert.ok(ciRuns.includes('- run: npm run developer-path:mock'), 'CI runs the developer path against the mock platform');
+// Commands are `run:` steps, or the shared test workflow's install/test/extra inputs.
+const ciRuns = ci.split('\n').filter((l) => /^\s*(-?\s*run|install|test|extra):/.test(l)).map((l) => l.trim().replace(/\s+#.*$/, ''));
+assert.ok(ciRuns.some((l) => /^(- run|extra): npm run developer-path:mock$/.test(l)), 'CI runs the developer path against the mock platform');
 assert.ok(!ciRuns.some((l) => /developer-path(?!:mock)|scripts\/developer-path\.js/.test(l)), 'CI never runs the real-platform developer path');
 assert.equal(JSON.parse(fs.readFileSync(path.join(ROOT, 'STATUS.json'), 'utf8')).stage, 'alpha');
 assert.match(fs.readFileSync(path.join(ROOT, 'LICENSE'), 'utf8'), /^MIT License/);
