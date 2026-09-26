@@ -3,7 +3,7 @@
   "stage": "alpha",
   "code": true,
   "wave": "W20",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "sdk": "openvibe-sdk v0.4.0",
   "contracts": "openvibe-contracts v0.28.0 (mod-manifest example)",
   "ci": "every example's smoke test runs on Node 22.22.1 against openvibe-sdk/testing's mock platform (developer-app rules for Events, Media and Tools as in production) plus a local Chat WebSocket mock; none reaches the network; a second job runs the developer path check (scripts/developer-path.js) against the same mock platform",

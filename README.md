@@ -3,7 +3,7 @@
 > Executable public integration examples for the OpenVibe platform: the SDK, scoped credentials
 > and public APIs, nothing else.
 
-**Status:** alpha, 0.2.0 (roadmap Wave 20). Nine examples, each with a smoke test that CI runs on
+**Status:** alpha, 0.3.0 (roadmap Wave 20; the `create-openvibe-app` scaffolder, WS-N task 6). Nine examples, each with a smoke test that CI runs on
 Node 22.22.1 against `openvibe-sdk/testing`'s mock platform (no network). `npm run e2e` runs three
 of them (Media, Events pull, a Tools job) against the real platform with your own sandbox app; it
 is not part of CI or `npm test`, and it was not run against production as part of this release.
@@ -33,6 +33,27 @@ OpenVibe services themselves are AGPL-3.0.
 Each example folder has a README, a `.env.example`, its own `package.json` and a
 `test/smoke.test.js`. Configuration is environment variables only (`OV_CLIENT_ID`,
 `OV_CLIENT_SECRET`, `OV_PROJECT_ID`, …); secrets are never logged or sent to a browser.
+
+## Start a new app
+
+`create-openvibe-app` copies one of these examples into a new folder as your starting point, with
+its smoke test, a `.gitignore`, the package renamed and the SDK pinned to the same tag. It needs no
+network beyond fetching this package.
+
+```bash
+npx --package=https://codeload.github.com/OpenVibers/OpenVibe.Examples/tar.gz/refs/tags/v0.3.0 create-openvibe-app my-app --template web
+cd my-app && npm install && cp .env.example .env && npm test
+```
+
+| Template | Starts from | For |
+|---|---|---|
+| `web` | [browser-app](examples/browser-app) | a plain web page that signs in with OpenVibe (PKCE) and calls a public API |
+| `server` | [node-server-app](examples/node-server-app) | a Node server with a client-credentials app token and registry discovery |
+| `bot` | [chat-bot](examples/chat-bot) | a chat bot that stays in its one room and always identifies as a bot |
+| `mod` | [mod-manifest](examples/mod-manifest) | a mod manifest validated against the schema, capabilities and compatibility ranges |
+
+Without `--template` it asks on a terminal (and picks `web` otherwise). `npm create openvibe-app`
+will work the same way once the package is on the npm registry; until then use the `npx` line.
 
 ## End-to-end walkthrough
 
