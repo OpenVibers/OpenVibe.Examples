@@ -9,7 +9,8 @@
  * their public origins with real RS256 tokens. It has no account API, so this adds the two routes
  * the flow uses, /api/auth/register and /api/auth/login, as a thin layer: register creates a mock
  * user and returns a Network user token for it; login returns one for an existing user (the mock
- * does not check passwords). It also stands in for OpenVibe.Codes' release API (the release step):
+ * does not check passwords). It also mints Network's export tokens (the export step, signed by the
+ * platform like any app token) and stands in for OpenVibe.Codes' release API (the release step):
  * an app token for openvibe.codes carrying codes.release.manage manages the app's own releases,
  * draft → published → deprecated → revoked, and the public list shows every release but drafts, like Codes.
  * Everything else is the platform mock's own.
@@ -62,6 +63,15 @@ function withAccounts(platform, network = PRODUCTION_NETWORK) {
             }
             const user = byName.get(username.toLowerCase());
             return user ? reply(200, { token: platform.signUserToken(user) }) : reply(401, { error: 'Invalid credentials' });
+        }
+        // Network's export tokens (WS-N task 9): read-only app-shaped tokens for the project's owner, as Network mints them.
+        const ex = url.origin === network && method === 'POST' && url.pathname.match(/^\/api\/v1\/projects\/(prj_[0-9A-Z]+)\/export-tokens$/i);
+        if (ex) {
+            const body = JSON.parse(init.body || '{}');
+            const caps = { 'openvibe.media': ['media.object.list', 'media.object.read'], 'openvibe.events': ['events.app.read'] }[body.audience];
+            if (!caps) return reply(422, { code: 'export.invalid_audience' });
+            const token = platform.signAppToken(`app_${ex[1].slice(4)}`, { audience: body.audience, capabilities: caps, projectId: ex[1], env: body.env || 'production' });
+            return reply(201, { access_token: token, token_type: 'Bearer', expires_in: 300, scope: caps.join(' ') });
         }
         if (url.origin === PRODUCTION_CODES) return codes(url, method, init);
         return platform.fetch(input, init);

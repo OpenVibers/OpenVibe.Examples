@@ -157,15 +157,16 @@ scoped credentials only, then rotates and revokes those credentials and cleans u
 | 5. grants | requests `media.object.upload`, `media.object.read`, `events.app.publish`, `events.app.read`, `codes.release.manage`; all must be approved at once |
 | 6. media | [media-uploader](examples/media-uploader): upload a small file, read it back, delete it |
 | 7. events | [event-subscriber](examples/event-subscriber): publish `app.<project_key>.developer_path.ran`, pull it with a cursor |
-| 8. release | as the app, on OpenVibe.Codes (`OV_CODES_URL`): a sandbox release of itself goes draft → published → deprecated → revoked, checked in the public list each time |
-| 9. credentials | rotates with no overlap and revokes the first credential; the old secret must be refused at `/oauth/token`, the new one must work |
-| 10. cleanup | archives the project, even when an earlier step failed; the app's secret must then be refused |
+| 8. export | as the project's owner: Network mints 5-minute read-only export tokens; Media lists the project's sandbox files with one and refuses an upload; Events returns the event from step 7 with the other |
+| 9. release | as the app, on OpenVibe.Codes (`OV_CODES_URL`): a sandbox release of itself goes draft → published → deprecated → revoked, checked in the public list each time |
+| 10. credentials | rotates with no overlap and revokes the first credential; the old secret must be refused at `/oauth/token`, the new one must work |
+| 11. cleanup | archives the project, even when an earlier step failed; the app's secret must then be refused |
 
 **In CI**, on every push, `npm run developer-path:mock` runs the same code against
 `openvibe-sdk/testing`'s mock platform (the `developer-path` job; `test/developer-path.test.js`
 also checks it leaves nothing behind, never prints a secret, and still cleans up after a failure).
 The mock has no account API, so `scripts/developer-path-mock.js` adds register and login routes
-that mint mock user tokens, and stands in for Codes' release API; every other step is the platform mock's own.
+that mint mock user tokens, mints export tokens, and stands in for Codes' release API; every other step is the platform mock's own.
 
 **Against production** it runs only when a person starts it. Credentials come from the
 environment (or `./.env`) only:
@@ -181,7 +182,7 @@ It refuses to start without credentials, and refuses in CI against the productio
 set and `OV_NETWORK_URL` unset or `https://openvibe.network`), so it can later run in CI against
 an integration environment but never against production by accident. It masks every password,
 secret and token in its output and prints signed URLs without their signature. Exit `0` when all
-ten steps passed, `1` when one failed, `2` when it refused to start.
+eleven steps passed, `1` when one failed, `2` when it refused to start.
 
 It does not yet cover webhook delivery to an external endpoint (that needs a public https host)
 or publishing an app release in OpenVibe.Codes.

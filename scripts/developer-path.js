@@ -13,13 +13,16 @@
  *                  approved at once for the project owner inside the sandbox allowance
  *   6. media       examples/media-uploader: upload a small file, read it back, delete it
  *   7. events      examples/event-subscriber: publish app.<project_key>.developer_path.ran, pull it
- *   8. release     as the app, on OpenVibe.Codes: a sandbox release of itself goes draft →
+ *   8. export      as the project's owner: Network mints read-only export tokens (5 minutes); Media
+ *                  lists the project's sandbox files with one and refuses an upload; Events returns the
+ *                  event from step 7 with the other (roadmap WS-N task 9, the project export)
+ *   9. release     as the app, on OpenVibe.Codes: a sandbox release of itself goes draft →
  *                  published → deprecated → revoked, checked in the public list at each step (a
  *                  draft is never listed; a revoked release stays listed, marked revoked)
  *                  (roadmap WS-N task 5, the app release flow in production)
- *   9. credentials rotate with no overlap, revoke the first credential; the old secret is refused
+ *  10. credentials rotate with no overlap, revoke the first credential; the old secret is refused
  *                  at /oauth/token and the new one works
- *  10. cleanup     archive the project (always attempted once it exists); the app's secret is
+ *  11. cleanup     archive the project (always attempted once it exists); the app's secret is
  *                  refused afterwards
  *
  * The same flow runs in CI against openvibe-sdk/testing's mock platform (scripts/developer-path-mock.js,
@@ -50,8 +53,10 @@ const { createSubscriber, createCursorStore, loadConfig: subscriberConfig } = re
 
 const PRODUCTION_NETWORK = 'https://openvibe.network';
 const PRODUCTION_CODES = 'https://openvibe.codes';
+const PRODUCTION_MEDIA = 'https://openvibe.media';
+const PRODUCTION_EVENTS = 'https://events.openvibe.network';
 const GRANTS = ['media.object.upload', 'media.object.read', 'events.app.publish', 'events.app.read', 'codes.release.manage'];
-const STEPS = ['account', 'discovery', 'project', 'app', 'grants', 'media', 'events', 'release', 'credentials', 'cleanup'];
+const STEPS = ['account', 'discovery', 'project', 'app', 'grants', 'media', 'events', 'export', 'release', 'credentials', 'cleanup'];
 const STEP_TIMEOUT_MS = 120000;
 
 const withoutQuery = (u) => { try { const x = new URL(u); return `${x.origin}${x.pathname}${x.search ? ' (signed)' : ''}`; } catch { return u; } };
@@ -93,11 +98,11 @@ async function tryToken(fetchImpl, network, clientId, clientSecret, audience) {
 }
 
 /**
- * Runs the ten steps. account: { token } | { username, password, register }. onSecret(value) is
+ * Runs the eleven steps. account: { token } | { username, password, register }. onSecret(value) is
  * called with every password, secret and token as soon as it is known, so the caller can mask it.
  * → { ok, steps: [{ name, ok, skipped?, error? }], projectId, appId }
  */
-async function runDeveloperPath({ network = PRODUCTION_NETWORK, codes = PRODUCTION_CODES, fetch: fetchImpl = globalThis.fetch, account, log = (m) => console.log(m), onSecret = () => {}, now = () => new Date() }) {
+async function runDeveloperPath({ network = PRODUCTION_NETWORK, codes = PRODUCTION_CODES, media = PRODUCTION_MEDIA, events = PRODUCTION_EVENTS, fetch: fetchImpl = globalThis.fetch, account, log = (m) => console.log(m), onSecret = () => {}, now = () => new Date() }) {
     network = network.replace(/\/+$/, '');
     codes = codes.replace(/\/+$/, '');
     const say = (m) => log(`    ${m}`);
@@ -206,6 +211,7 @@ async function runDeveloperPath({ network = PRODUCTION_NETWORK, codes = PRODUCTI
     await step('events', async () => {
         const pub = await publishAppEvent(publishConfig(creds()), { name: 'developer_path.ran', subject: { type: 'check', id: 'developer-path' }, payload: { at: now().toISOString() } }, { fetch: fetchImpl });
         say(`published ${pub.event_type} ${pub.event_id} -> seq ${pub.seq}`);
+        st.eventId = pub.event_id;
         const cursorPath = path.join(dir, 'cursor.json');
         createCursorStore(cursorPath).set('pull', Math.max(0, pub.seq - 1));
         const seen = [];
@@ -218,6 +224,35 @@ async function runDeveloperPath({ network = PRODUCTION_NETWORK, codes = PRODUCTI
         const mine = seen.find((e) => e.id === pub.event_id);
         if (!mine) throw new Error(`the published event ${pub.event_id} was not in the pull of ${topics[0]}`);
         say(`pulled ${topics[0]} with events.app.read: ${n} event(s), found ${mine.id} at seq ${mine.seq}`);
+    });
+
+    await step('export', async () => {
+        const mint = async (audience) => {
+            const res = await fetchImpl(`${network}/api/v1/projects/${st.projectId}/export-tokens`, {
+                method: 'POST', headers: { Authorization: `Bearer ${st.token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify({ audience, env: 'sandbox' }),
+            });
+            const b = await res.json().catch(() => ({}));
+            if (res.status !== 201 || typeof b.access_token !== 'string') throw new Error(`export token for ${audience}: ${res.status} ${b.code || b.error || ''}`.trim());
+            onSecret(b.access_token);
+            return b.access_token;
+        };
+        const auth = (t) => ({ Authorization: `Bearer ${t}`, Accept: 'application/json' });
+        const mt = await mint('openvibe.media');
+        const list = await fetchImpl(`${media.replace(/\/+$/, '')}/api/v1/${st.projectId}/files?limit=10`, { headers: auth(mt) });
+        if (list.status !== 200) throw new Error(`Media listed the project's objects with ${list.status}`);
+        const listed = await list.json().catch(() => ({}));
+        say(`Media lists the project's sandbox files with the export token (${(listed.files || listed.objects || []).length} now)`);
+        const form = new FormData();
+        form.append('file', new Blob(['x'], { type: 'text/plain' }), 'x.txt');
+        const write = await fetchImpl(`${media.replace(/\/+$/, '')}/api/v1/${st.projectId}/files`, { method: 'POST', headers: auth(mt), body: form });
+        if (write.status !== 403) throw new Error(`a write with the export token answered ${write.status}, not 403`);
+        say('a write with it is refused (403)');
+        const et = await mint('openvibe.events');
+        const pull = await fetchImpl(`${events.replace(/\/+$/, '')}/api/v1/events?topic=${encodeURIComponent(`app.${projectKey(st.projectId)}.*`)}&after_seq=0&limit=100`, { headers: auth(et) });
+        const got = pull.status === 200 ? ((await pull.json()).events || []) : [];
+        if (!got.some((e) => (e.event || e).event_id === st.eventId)) throw new Error(`Events did not return the event published in step 7 with the export token (${pull.status})`);
+        say(`Events returns the project's event ${st.eventId} with the other`);
     });
 
     await step('release', async () => {
@@ -324,7 +359,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     console.log(`OpenVibe developer path against ${network}\n`);
     const started = Date.now();
     const codes = (env.OV_CODES_URL || PRODUCTION_CODES).replace(/\/+$/, '');
-    const result = await runDeveloperPath({ network, codes, account, onSecret });
+    const result = await runDeveloperPath({ network, codes, media: env.OV_MEDIA_URL || PRODUCTION_MEDIA, events: env.OV_EVENTS_URL || PRODUCTION_EVENTS, account, onSecret });
     // --result <file>: a JSON record for the scheduled production run (OpenVibe.Host openvibe-devpath.timer,
     // shown on openvibe.network/status): step names and outcomes only — never an error text, URL, id or secret.
     const out = argv.indexOf('--result');
