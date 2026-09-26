@@ -9,13 +9,16 @@
  *   2. discovery   GET /.well-known/openvibe, as any origin may
  *   3. project     a new project (sandbox) through /api/v1/projects (openvibe-sdk/projects)
  *   4. app         a confidential sandbox app; its secret is held in memory only
- *   5. grants      media.object.upload|read and events.app.publish|read, approved at once for the
- *                  project owner inside the sandbox allowance
+ *   5. grants      media.object.upload|read, events.app.publish|read and codes.release.manage,
+ *                  approved at once for the project owner inside the sandbox allowance
  *   6. media       examples/media-uploader: upload a small file, read it back, delete it
  *   7. events      examples/event-subscriber: publish app.<project_key>.developer_path.ran, pull it
- *   8. credentials rotate with no overlap, revoke the first credential; the old secret is refused
+ *   8. release     as the app, on OpenVibe.Codes: a sandbox release of itself goes draft →
+ *                  published → deprecated → revoked, checked in the public list at each step
+ *                  (roadmap WS-N task 5, the app release flow in production)
+ *   9. credentials rotate with no overlap, revoke the first credential; the old secret is refused
  *                  at /oauth/token and the new one works
- *   9. cleanup     archive the project (always attempted once it exists); the app's secret is
+ *  10. cleanup     archive the project (always attempted once it exists); the app's secret is
  *                  refused afterwards
  *
  * The same flow runs in CI against openvibe-sdk/testing's mock platform (scripts/developer-path-mock.js,
@@ -28,7 +31,7 @@
  *
  * Credentials come from the environment only (or ./.env). It refuses to start without them, and
  * refuses to run in CI against the production Network (CI set and OV_NETWORK_URL unset or
- * openvibe.network). Optional: OV_NETWORK_URL. It never prints a password, secret or token: they
+ * openvibe.network). Optional: OV_NETWORK_URL, OV_CODES_URL. It never prints a password, secret or token: they
  * are masked in all output, and signed URLs are shown without their signature. Exit 0 when every
  * step passed, 1 when one failed, 2 when it refused to start.
  */
@@ -45,8 +48,9 @@ const { publishAppEvent, loadConfig: publishConfig } = require(path.join(ROOT, '
 const { createSubscriber, createCursorStore, loadConfig: subscriberConfig } = require(path.join(ROOT, 'examples/event-subscriber/subscriber'));
 
 const PRODUCTION_NETWORK = 'https://openvibe.network';
-const GRANTS = ['media.object.upload', 'media.object.read', 'events.app.publish', 'events.app.read'];
-const STEPS = ['account', 'discovery', 'project', 'app', 'grants', 'media', 'events', 'credentials', 'cleanup'];
+const PRODUCTION_CODES = 'https://openvibe.codes';
+const GRANTS = ['media.object.upload', 'media.object.read', 'events.app.publish', 'events.app.read', 'codes.release.manage'];
+const STEPS = ['account', 'discovery', 'project', 'app', 'grants', 'media', 'events', 'release', 'credentials', 'cleanup'];
 const STEP_TIMEOUT_MS = 120000;
 
 const withoutQuery = (u) => { try { const x = new URL(u); return `${x.origin}${x.pathname}${x.search ? ' (signed)' : ''}`; } catch { return u; } };
@@ -66,6 +70,17 @@ async function postJson(fetchImpl, url, body) {
     return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
+/** POST /oauth/token client_credentials → the app's access token for `audience`, or throws. */
+async function appToken(fetchImpl, network, clientId, clientSecret, audience) {
+    const res = await fetchImpl(`${network}/oauth/token`, {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+        body: new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret, audience }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || typeof body.access_token !== 'string') throw new Error(`no token for ${audience}: ${res.status} ${body.error || ''}`);
+    return body.access_token;
+}
+
 /** POST /oauth/token client_credentials → { status, error } (the token itself is not kept). */
 async function tryToken(fetchImpl, network, clientId, clientSecret, audience) {
     const res = await fetchImpl(`${network}/oauth/token`, {
@@ -77,12 +92,13 @@ async function tryToken(fetchImpl, network, clientId, clientSecret, audience) {
 }
 
 /**
- * Runs the nine steps. account: { token } | { username, password, register }. onSecret(value) is
+ * Runs the ten steps. account: { token } | { username, password, register }. onSecret(value) is
  * called with every password, secret and token as soon as it is known, so the caller can mask it.
  * → { ok, steps: [{ name, ok, skipped?, error? }], projectId, appId }
  */
-async function runDeveloperPath({ network = PRODUCTION_NETWORK, fetch: fetchImpl = globalThis.fetch, account, log = (m) => console.log(m), onSecret = () => {}, now = () => new Date() }) {
+async function runDeveloperPath({ network = PRODUCTION_NETWORK, codes = PRODUCTION_CODES, fetch: fetchImpl = globalThis.fetch, account, log = (m) => console.log(m), onSecret = () => {}, now = () => new Date() }) {
     network = network.replace(/\/+$/, '');
+    codes = codes.replace(/\/+$/, '');
     const say = (m) => log(`    ${m}`);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-developer-path-'));
     const st = { token: null, projects: null, projectId: null, appId: null, secret: null, credentialId: null, newSecret: null };
@@ -203,6 +219,39 @@ async function runDeveloperPath({ network = PRODUCTION_NETWORK, fetch: fetchImpl
         say(`pulled ${topics[0]} with events.app.read: ${n} event(s), found ${mine.id} at seq ${mine.seq}`);
     });
 
+    await step('release', async () => {
+        const token = await appToken(fetchImpl, network, st.appId, st.secret, 'openvibe.codes');
+        onSecret(token);
+        const call = async (method, p, body, auth = true) => {
+            const res = await fetchImpl(`${codes}/api/v1${p}`, {
+                method, headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}), ...(auth ? { Authorization: `Bearer ${token}` } : {}) },
+                body: body ? JSON.stringify(body) : undefined,
+            });
+            const out = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(`${method} ${p}: ${res.status} ${out.code || ''} ${out.detail || ''}`.trim());
+            return out;
+        };
+        const listed = async (id) => ((await call('GET', `/apps/${st.appId}/releases`, null, false)).releases || []).find((r) => r.id === id);
+        const version = `1.0.${Math.floor(now().getTime() / 1000)}`;
+        const manifest = {
+            id: st.appId, name: 'developer-path', version, publisher: { type: 'app', id: st.appId }, project_id: st.projectId, environment: 'sandbox', capabilities: [],
+            compatibility: { contracts: `^${require('openvibe-contracts/package.json').version}`, sdk: `^${require('openvibe-sdk/package.json').version}` },
+        };
+        const draft = (await call('POST', `/apps/${st.appId}/releases`, { kind: 'app', manifest, notes: 'OpenVibe developer path check', publish: false })).release;
+        if (!draft || draft.status !== 'draft') throw new Error(`the new release is ${draft && draft.status}, not draft`);
+        if (await listed(draft.id)) throw new Error('a draft is listed publicly');
+        say(`draft ${draft.id} (${version})`);
+        const steps = [['publish', {}, 'published', true], ['deprecate', { reason: 'developer path check' }, 'deprecated', true], ['revoke', { reason: 'developer path check done' }, 'revoked', false]];
+        for (const [action, body, want, shown] of steps) {
+            const r = await call('POST', `/releases/${draft.id}/${action}`, body);
+            const status = (r.release || r).status;
+            if (status !== want) throw new Error(`${action} left it ${status}, not ${want}`);
+            const pub = await listed(draft.id);
+            if (shown ? !(pub && pub.status === want) : pub) throw new Error(`after ${action} the public list ${pub ? `shows it ${pub.status}` : 'does not show it'}`);
+            say(`${action}: ${want}${shown ? ', in the public list' : ', gone from the public list'}`);
+        }
+    });
+
     await step('credentials', async () => {
         const rotated = await st.projects.credentials.rotate(st.projectId, st.appId, { overlapSeconds: 0 });
         st.newSecret = rotated.credential.client_secret;
@@ -272,7 +321,8 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     const onSecret = maskOutput();
     console.log(`OpenVibe developer path against ${network}\n`);
     const started = Date.now();
-    const result = await runDeveloperPath({ network, account, onSecret });
+    const codes = (env.OV_CODES_URL || PRODUCTION_CODES).replace(/\/+$/, '');
+    const result = await runDeveloperPath({ network, codes, account, onSecret });
     // --result <file>: a JSON record for the scheduled production run (OpenVibe.Host openvibe-devpath.timer,
     // shown on openvibe.network/status): step names and outcomes only — never an error text, URL, id or secret.
     const out = argv.indexOf('--result');
@@ -291,7 +341,7 @@ function writeResult(file, result, { network, started = Date.now(), now = Date.n
     return record;
 }
 
-module.exports = { runDeveloperPath, writeResult, GRANTS, STEPS, PRODUCTION_NETWORK };
+module.exports = { runDeveloperPath, writeResult, GRANTS, STEPS, PRODUCTION_NETWORK, PRODUCTION_CODES };
 
 if (require.main === module) {
     main().then((code) => { process.exitCode = code; }, (err) => { console.error(`developer-path: ${describeError(err)}`); process.exitCode = 1; });
