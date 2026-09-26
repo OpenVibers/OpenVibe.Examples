@@ -11,7 +11,7 @@
  * user and returns a Network user token for it; login returns one for an existing user (the mock
  * does not check passwords). It also stands in for OpenVibe.Codes' release API (the release step):
  * an app token for openvibe.codes carrying codes.release.manage manages the app's own releases,
- * draft → published → deprecated → revoked, and the public list shows published and deprecated ones.
+ * draft → published → deprecated → revoked, and the public list shows every release but drafts, like Codes.
  * Everything else is the platform mock's own.
  */
 const { createMockPlatform } = require('openvibe-sdk/testing');
@@ -26,7 +26,7 @@ function withAccounts(platform, network = PRODUCTION_NETWORK) {
     function codes(url, method, init) {
         const m = url.pathname.match(/^\/api\/v1\/(?:apps\/(app_[0-9A-Z]+)\/releases|releases\/([a-z0-9_]+)\/(publish|deprecate|revoke))$/i);
         if (!m) return reply(404, { code: 'route.not_found' });
-        const list = (appId) => [...releases.values()].filter((r) => r.app_id === appId && ['published', 'deprecated'].includes(r.status));
+        const list = (appId) => [...releases.values()].filter((r) => r.app_id === appId && r.status !== 'draft');
         if (m[1] && method === 'GET') return reply(200, { app_id: m[1], releases: list(m[1]) });
         let claims = null;
         try { claims = JSON.parse(Buffer.from(String((init.headers || {}).Authorization || '').replace(/^Bearer /, '').split('.')[1], 'base64url').toString('utf8')); } catch { claims = null; }

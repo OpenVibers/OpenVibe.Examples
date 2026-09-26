@@ -14,7 +14,8 @@
  *   6. media       examples/media-uploader: upload a small file, read it back, delete it
  *   7. events      examples/event-subscriber: publish app.<project_key>.developer_path.ran, pull it
  *   8. release     as the app, on OpenVibe.Codes: a sandbox release of itself goes draft →
- *                  published → deprecated → revoked, checked in the public list at each step
+ *                  published → deprecated → revoked, checked in the public list at each step (a
+ *                  draft is never listed; a revoked release stays listed, marked revoked)
  *                  (roadmap WS-N task 5, the app release flow in production)
  *   9. credentials rotate with no overlap, revoke the first credential; the old secret is refused
  *                  at /oauth/token and the new one works
@@ -241,14 +242,15 @@ async function runDeveloperPath({ network = PRODUCTION_NETWORK, codes = PRODUCTI
         if (!draft || draft.status !== 'draft') throw new Error(`the new release is ${draft && draft.status}, not draft`);
         if (await listed(draft.id)) throw new Error('a draft is listed publicly');
         say(`draft ${draft.id} (${version})`);
-        const steps = [['publish', {}, 'published', true], ['deprecate', { reason: 'developer path check' }, 'deprecated', true], ['revoke', { reason: 'developer path check done' }, 'revoked', false]];
-        for (const [action, body, want, shown] of steps) {
+        // Codes lists every release but drafts, a revoked one included (marked revoked), so people see it was pulled.
+        const steps = [['publish', {}, 'published'], ['deprecate', { reason: 'developer path check' }, 'deprecated'], ['revoke', { reason: 'developer path check done' }, 'revoked']];
+        for (const [action, body, want] of steps) {
             const r = await call('POST', `/releases/${draft.id}/${action}`, body);
             const status = (r.release || r).status;
             if (status !== want) throw new Error(`${action} left it ${status}, not ${want}`);
             const pub = await listed(draft.id);
-            if (shown ? !(pub && pub.status === want) : pub) throw new Error(`after ${action} the public list ${pub ? `shows it ${pub.status}` : 'does not show it'}`);
-            say(`${action}: ${want}${shown ? ', in the public list' : ', gone from the public list'}`);
+            if (!(pub && pub.status === want)) throw new Error(`after ${action} the public list ${pub ? `shows it ${pub.status}` : 'does not show it'}`);
+            say(`${action}: ${want}, and so in the public list`);
         }
     });
 
