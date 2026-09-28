@@ -9,12 +9,18 @@ of them (Media, Events pull, a Tools job) against the real platform with your ow
 is not part of CI or `npm test`, and it was not run against production as part of this release.
 `npm run developer-path` is the Wave 20 exit check (account to Media and Events to revoked
 credentials); CI runs it against the mock platform, and a person runs it against production.  
-**Built on:** [openvibe-sdk v0.4.0](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.4.0), and
-openvibe-contracts v0.28.0 for the mod manifest.  
+**Built on:** [openvibe-sdk v0.11.0](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.11.0), and
+openvibe-contracts v0.49.0 for the mod manifest.  
 **Plan:** OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §15.1
 and §18.9; roadmap Wave 20, §30 (public SDK surface), ADR-014 (developer projects).  
 **License:** MIT ([LICENSE](LICENSE)), so you can copy any example into your own project. The
 OpenVibe services themselves are AGPL-3.0.
+
+## Purpose
+
+Show, with code a developer can copy, how an app outside the network uses OpenVibe: only the public
+SDK, scoped developer-app credentials and public APIs, never a loopback key or a first-party database.
+Each example is small, runs on its own and proves one thing with a smoke test.
 
 ## The examples
 
@@ -259,7 +265,7 @@ Repository checks (`test/`):
   value in a `.env.example`.
 - `structure.test.js` checks the nine examples are complete and copyable: README with "What it
   proves" and "Run it against the real platform", a `.env.example` that names every variable the
-  code reads, MIT license, `openvibe-sdk` pinned to the v0.4.0 tag, no `file:` links; and that
+  code reads, MIT license, `openvibe-sdk` pinned to the v0.11.0 tag, no `file:` links; and that
   `npm run e2e` is outside CI and `npm test` and refuses to start without its variables; and that
   CI runs the developer path against the mock platform only.
 - `developer-path.test.js` runs the developer path against the mock platform and checks the
@@ -292,9 +298,18 @@ test/public-surface.test.js, test/structure.test.js
 
 ## Depends on
 
-- OpenVibe.SDK (v0.4.0), OpenVibe.Contracts (v0.28.0, mod manifest only)
+- OpenVibe.SDK (v0.11.0), OpenVibe.Contracts (v0.49.0, mod manifest only)
 - at run time against the real platform: Network (tokens, registry, developer projects), Events,
   Media, Tools, Chat (on openvibe.live)
+
+## Capabilities
+
+Examples implements no capability (its manifest lists none). The examples call the platform as a
+developer app with the grants a sandbox project asks for (`npm run new-app`): `media.object.upload`
+and `media.object.read` (Media), `events.app.publish`, `events.app.read` and `events.app.subscribe`
+(Events), and `tools.job.create`, `tools.job.read` and `tools.job.cancel` (Tools); a public browser app
+gets `media.object.read` only. The developer path check also uses `codes.release.manage` (Codes). The
+chat bot uses a Live `hbt_` token with scope `chat`, because `chat.message.send` is first-party.
 
 ## Acceptance
 
@@ -313,6 +328,21 @@ test/public-surface.test.js, test/structure.test.js
   three of the nine examples along the same path. **Partly met.**
 - No example needs a loopback-only internal key or first-party database access: **yes**, enforced
   by `test/public-surface.test.js`.
+
+## Security
+
+Reporting a vulnerability: [SECURITY.md](SECURITY.md). Configuration is environment variables only;
+secrets are never logged or sent to a browser, and `.env.example` files hold names, not values
+(`test/public-surface.test.js` fails on a secret value there, on the loopback shared-key header and on
+internal routes or ports). Every smoke test replaces `fetch` with one that throws, so no test reaches the
+network. `npm run developer-path` refuses to run against production in CI.
+
+## Deploy
+
+Nothing is deployed from this repository: it has no unit, port or env file and is not published as a
+package. CI (`.github/workflows/ci.yml`) runs `npm test` and the developer path against the mock
+platform on every push. Copy an example, or start one with `create-openvibe-app`, and deploy it as your
+own app.
 
 ---
 

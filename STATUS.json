@@ -4,8 +4,18 @@
   "code": true,
   "wave": "W20",
   "version": "0.3.0",
-  "sdk": "openvibe-sdk v0.4.0",
-  "contracts": "openvibe-contracts v0.28.0 (mod-manifest example)",
+  "sdk": "openvibe-sdk v0.11.0",
+  "contracts": "openvibe-contracts v0.49.0 (mod-manifest example)",
+  "deployed": false,
+  "deployment": "none: a repository with CI, not a runtime and not a published package",
+  "features": [
+    "nine copyable examples: browser app, Node server app, Media uploader, event subscriber, webhook consumer, tool job, OAuth app, chat bot, mod manifest",
+    "smoke tests against openvibe-sdk/testing's mock platform, offline",
+    "create-openvibe-app scaffolder",
+    "npm run e2e against the real platform (on demand)",
+    "developer path check (mock in CI, real on demand)",
+    "public-surface check: no loopback keys, internal routes or secret values"
+  ],
   "ci": "every example's smoke test runs on Node 22.22.1 against openvibe-sdk/testing's mock platform (developer-app rules for Events, Media and Tools as in production) plus a local Chat WebSocket mock; none reaches the network; a second job runs the developer path check (scripts/developer-path.js) against the same mock platform",
   "e2e": "npm run e2e runs media-uploader, event-subscriber (pull) and tool-job against the real platform with a sandbox app's OV_CLIENT_ID/OV_CLIENT_SECRET/OV_PROJECT_ID; on demand only, not in CI or npm test; not run against production as part of this release",
   "platform": "sandbox developer path (projects, sandbox grants, app tokens for openvibe.media/events/tools, Media project tenant, Events app.<project_key>.* events, Tools jobs, CORS-open discovery) verified in production on 2026-09-23 by the platform's W20 exit check (a curl script against the public endpoints); that check is now committed as npm run developer-path (SDK and examples, plus credential rotation, revocation and archive), which runs in CI against the mock platform and on demand against production (credentials from env only; refuses in CI against production); not yet run against production",
@@ -17,5 +27,5 @@
     "mod publishing is first-party"
   ],
   "plan": "OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §15.1, §18.9; roadmap Wave 20, §30, ADR-014",
-  "updated": "2026-09-23"
+  "updated": "2026-09-28"
 }
