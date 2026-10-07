@@ -64,7 +64,7 @@ retention gaps come from its `pruneEvents()`.
 
 Things to know:
 
-- Pull goes to `https://events.openvibe.network/api/v1/events` (the origin comes from the registry).
+- Pull goes to `https://openvibe.events/api/v1/events` (the origin comes from the registry).
   You see your project's events in your app's environment only: a sandbox app never sees production
   events and the other way round. A first-party pattern in `OV_PLATFORM_TOPICS`, such as
   `live.stream.*`, returns only that namespace's `public` events.
