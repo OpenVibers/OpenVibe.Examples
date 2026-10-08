@@ -10,21 +10,21 @@
  * the flow uses, /api/auth/register and /api/auth/login, as a thin layer: register creates a mock
  * user and returns a Network user token for it; login returns one for an existing user (the mock
  * does not check passwords). It also mints Network's export tokens (the export step, signed by the
- * platform like any app token) and stands in for OpenVibe.Codes' release API (the release step):
- * an app token for openvibe.codes carrying codes.release.manage manages the app's own releases,
- * draft → published → deprecated → revoked, and the public list shows every release but drafts, like Codes.
+ * platform like any app token) and stands in for OpenVibe.Services' release API (the release step):
+ * an app token for openvibe.services carrying services.release.manage manages the app's own releases,
+ * draft → published → deprecated → revoked, and the public list shows every release but drafts, like Services.
  * Everything else is the platform mock's own.
  */
 const { createMockPlatform } = require('openvibe-sdk/testing');
-const { runDeveloperPath, PRODUCTION_NETWORK, PRODUCTION_CODES } = require('./developer-path');
+const { runDeveloperPath, PRODUCTION_NETWORK, PRODUCTION_SERVICES } = require('./developer-path');
 
 function withAccounts(platform, network = PRODUCTION_NETWORK) {
     const byName = new Map();
     const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
-    // OpenVibe.Codes' release API, in memory (the token's signature is the platform's; here its claims decide).
+    // OpenVibe.Services' release API, in memory (the token's signature is the platform's; here its claims decide).
     const releases = new Map();
     let n = 0;
-    function codes(url, method, init) {
+    function services(url, method, init) {
         const m = url.pathname.match(/^\/api\/v1\/(?:apps\/(app_[0-9A-Z]+)\/releases|releases\/([a-z0-9_]+)\/(publish|deprecate|revoke))$/i);
         if (!m) return reply(404, { code: 'route.not_found' });
         const list = (appId) => [...releases.values()].filter((r) => r.app_id === appId && r.status !== 'draft');
@@ -32,7 +32,7 @@ function withAccounts(platform, network = PRODUCTION_NETWORK) {
         let claims = null;
         try { claims = JSON.parse(Buffer.from(String((init.headers || {}).Authorization || '').replace(/^Bearer /, '').split('.')[1], 'base64url').toString('utf8')); } catch { claims = null; }
         if (!claims) return reply(401, { code: 'auth.required' });
-        if (!(claims.aud || []).includes('openvibe.codes') || !(claims.cap || []).includes('codes.release.manage')) return reply(403, { code: 'capability.denied' });
+        if (!(claims.aud || []).includes('openvibe.services') || !(claims.cap || []).includes('services.release.manage')) return reply(403, { code: 'capability.denied' });
         const body = JSON.parse(init.body || '{}');
         if (m[1]) {
             if (claims.sub !== `app:${m[1]}` || !body.manifest || body.manifest.id !== m[1]) return reply(403, { code: 'release.forbidden' });
@@ -73,7 +73,7 @@ function withAccounts(platform, network = PRODUCTION_NETWORK) {
             const token = platform.signAppToken(`app_${ex[1].slice(4)}`, { audience: body.audience, capabilities: caps, projectId: ex[1], env: body.env || 'production' });
             return reply(201, { access_token: token, token_type: 'Bearer', expires_in: 300, scope: caps.join(' ') });
         }
-        if (url.origin === PRODUCTION_CODES) return codes(url, method, init);
+        if (url.origin === PRODUCTION_SERVICES) return services(url, method, init);
         return platform.fetch(input, init);
     };
 }

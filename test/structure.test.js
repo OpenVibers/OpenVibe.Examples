@@ -12,7 +12,7 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const EXPECTED = ['browser-app', 'chat-bot', 'event-subscriber', 'media-uploader', 'mod-manifest', 'node-server-app', 'oauth-app', 'tool-job', 'webhook-consumer'];
-const SDK = 'https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.35.0';
+const SDK = 'https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.35.2';
 
 const dirs = fs.readdirSync(path.join(ROOT, 'examples')).filter((d) => fs.statSync(path.join(ROOT, 'examples', d)).isDirectory()).sort();
 assert.deepEqual(dirs, EXPECTED, 'the nine charter examples');
