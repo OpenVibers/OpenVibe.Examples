@@ -2,7 +2,7 @@
 'use strict';
 /**
  * Create a project and a sandbox app for the examples with openvibe-sdk/projects, the same
- * /api/v1/projects API https://openvibe.codes uses. Nothing here needs staff: a new project is
+ * /api/v1/projects API https://openvibe.services uses. Nothing here needs staff: a new project is
  * sandbox, and the project owner's grant requests inside the sandbox allowance are approved at once.
  *
  *   npm run new-app                       # new project + confidential sandbox app -> ./.env
@@ -86,7 +86,7 @@ async function main(argv = process.argv.slice(2)) {
             return 0;
         }
         const secret = (created.credential || app.credential || {}).client_secret || created.client_secret;
-        if (!secret) throw new Error('Network returned no client secret; rotate one on the app (openvibe.codes)');
+        if (!secret) throw new Error('Network returned no client secret; rotate one on the app (openvibe.services)');
         fs.writeFileSync(envFile, `OV_CLIENT_ID=${appId}\nOV_CLIENT_SECRET=${secret}\nOV_PROJECT_ID=${projectId}\n`, { mode: 0o600 });
         console.log(`\nwrote ${envFile} (OV_CLIENT_ID, OV_CLIENT_SECRET, OV_PROJECT_ID; mode 0600). Next: npm run e2e`);
         return 0;

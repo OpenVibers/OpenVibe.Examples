@@ -8,7 +8,7 @@
  *
  * The app must be a CONFIDENTIAL app of that project with the sandbox grants media.object.upload,
  * media.object.read, events.app.publish, events.app.read, tools.job.create and tools.job.read
- * (scripts/new-sandbox-app.js or https://openvibe.codes create one). Optional: OV_NETWORK_URL,
+ * (scripts/new-sandbox-app.js or https://openvibe.services create one). Optional: OV_NETWORK_URL,
  * OV_TOOLS_JOBS_URL.
  *
  *   1. media-uploader   upload a small text file into the project's Media tenant, read its

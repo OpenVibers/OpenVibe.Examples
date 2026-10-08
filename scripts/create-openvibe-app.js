@@ -108,7 +108,7 @@ async function main() {
     if (!template) template = process.stdin.isTTY && process.stdout.isTTY ? await ask() : 'web';
     const { target, name } = create(opts.dir, template);
     const rel = path.relative(process.cwd(), target) || '.';
-    console.log(`\nCreated ${name} in ${rel} from the ${template} template.\n\nNext:\n  cd ${rel}\n  npm install\n  cp .env.example .env    # then fill in your app's values (never commit .env)\n  npm test                # the template's smoke test, no network needed\n  npm start\n\nCreate a project and an app at https://openvibe.codes, and read https://openvibe.codes/docs.`);
+    console.log(`\nCreated ${name} in ${rel} from the ${template} template.\n\nNext:\n  cd ${rel}\n  npm install\n  cp .env.example .env    # then fill in your app's values (never commit .env)\n  npm test                # the template's smoke test, no network needed\n  npm start\n\nCreate a project and an app at https://openvibe.services, and read https://openvibe.services/docs.`);
 }
 
 if (require.main === module) main().catch((err) => { console.error(err.message); process.exit(1); });
