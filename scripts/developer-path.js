@@ -9,14 +9,14 @@
  *   2. discovery   GET /.well-known/openvibe, as any origin may
  *   3. project     a new project (sandbox) through /api/v1/projects (openvibe-sdk/projects)
  *   4. app         a confidential sandbox app; its secret is held in memory only
- *   5. grants      media.object.upload|read, events.app.publish|read and codes.release.manage,
+ *   5. grants      media.object.upload|read, events.app.publish|read and services.release.manage,
  *                  approved at once for the project owner inside the sandbox allowance
  *   6. media       examples/media-uploader: upload a small file, read it back, delete it
  *   7. events      examples/event-subscriber: publish app.<project_key>.developer_path.ran, pull it
  *   8. export      as the project's owner: Network mints read-only export tokens (5 minutes); Media
  *                  lists the project's sandbox files with one and refuses an upload; Events returns the
  *                  event from step 7 with the other (roadmap WS-N task 9, the project export)
- *   9. release     as the app, on OpenVibe.Codes: a sandbox release of itself goes draft →
+ *   9. release     as the app, on OpenVibe.Services: a sandbox release of itself goes draft →
  *                  published → deprecated → revoked, checked in the public list at each step (a
  *                  draft is never listed; a revoked release stays listed, marked revoked)
  *                  (roadmap WS-N task 5, the app release flow in production)
@@ -35,7 +35,7 @@
  *
  * Credentials come from the environment only (or ./.env). It refuses to start without them, and
  * refuses to run in CI against the production Network (CI set and OV_NETWORK_URL unset or
- * openvibe.network). Optional: OV_NETWORK_URL, OV_CODES_URL. It never prints a password, secret or token: they
+ * openvibe.network). Optional: OV_NETWORK_URL, OV_SERVICES_URL. It never prints a password, secret or token: they
  * are masked in all output, and signed URLs are shown without their signature. Exit 0 when every
  * step passed, 1 when one failed, 2 when it refused to start.
  */
@@ -52,10 +52,10 @@ const { publishAppEvent, loadConfig: publishConfig } = require(path.join(ROOT, '
 const { createSubscriber, createCursorStore, loadConfig: subscriberConfig } = require(path.join(ROOT, 'examples/event-subscriber/subscriber'));
 
 const PRODUCTION_NETWORK = 'https://openvibe.network';
-const PRODUCTION_CODES = 'https://openvibe.codes';
+const PRODUCTION_SERVICES = 'https://openvibe.services';
 const PRODUCTION_MEDIA = 'https://openvibe.media';
 const PRODUCTION_EVENTS = 'https://openvibe.events';
-const GRANTS = ['media.object.upload', 'media.object.read', 'events.app.publish', 'events.app.read', 'codes.release.manage'];
+const GRANTS = ['media.object.upload', 'media.object.read', 'events.app.publish', 'events.app.read', 'services.release.manage'];
 const STEPS = ['account', 'discovery', 'project', 'app', 'grants', 'media', 'events', 'export', 'release', 'credentials', 'cleanup'];
 const STEP_TIMEOUT_MS = 120000;
 
@@ -102,9 +102,9 @@ async function tryToken(fetchImpl, network, clientId, clientSecret, audience) {
  * called with every password, secret and token as soon as it is known, so the caller can mask it.
  * → { ok, steps: [{ name, ok, skipped?, error? }], projectId, appId }
  */
-async function runDeveloperPath({ network = PRODUCTION_NETWORK, codes = PRODUCTION_CODES, media = PRODUCTION_MEDIA, events = PRODUCTION_EVENTS, fetch: fetchImpl = globalThis.fetch, account, log = (m) => console.log(m), onSecret = () => {}, now = () => new Date() }) {
+async function runDeveloperPath({ network = PRODUCTION_NETWORK, services = PRODUCTION_SERVICES, media = PRODUCTION_MEDIA, events = PRODUCTION_EVENTS, fetch: fetchImpl = globalThis.fetch, account, log = (m) => console.log(m), onSecret = () => {}, now = () => new Date() }) {
     network = network.replace(/\/+$/, '');
-    codes = codes.replace(/\/+$/, '');
+    services = services.replace(/\/+$/, '');
     const say = (m) => log(`    ${m}`);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-developer-path-'));
     const st = { token: null, projects: null, projectId: null, appId: null, secret: null, credentialId: null, newSecret: null };
@@ -256,10 +256,10 @@ async function runDeveloperPath({ network = PRODUCTION_NETWORK, codes = PRODUCTI
     });
 
     await step('release', async () => {
-        const token = await appToken(fetchImpl, network, st.appId, st.secret, 'openvibe.codes');
+        const token = await appToken(fetchImpl, network, st.appId, st.secret, 'openvibe.services');
         onSecret(token);
         const call = async (method, p, body, auth = true) => {
-            const res = await fetchImpl(`${codes}/api/v1${p}`, {
+            const res = await fetchImpl(`${services}/api/v1${p}`, {
                 method, headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}), ...(auth ? { Authorization: `Bearer ${token}` } : {}) },
                 body: body ? JSON.stringify(body) : undefined,
             });
@@ -277,7 +277,7 @@ async function runDeveloperPath({ network = PRODUCTION_NETWORK, codes = PRODUCTI
         if (!draft || draft.status !== 'draft') throw new Error(`the new release is ${draft && draft.status}, not draft`);
         if (await listed(draft.id)) throw new Error('a draft is listed publicly');
         say(`draft ${draft.id} (${version})`);
-        // Codes lists every release but drafts, a revoked one included (marked revoked), so people see it was pulled.
+        // Services lists every release but drafts, a revoked one included (marked revoked), so people see it was pulled.
         const steps = [['publish', {}, 'published'], ['deprecate', { reason: 'developer path check' }, 'deprecated'], ['revoke', { reason: 'developer path check done' }, 'revoked']];
         for (const [action, body, want] of steps) {
             const r = await call('POST', `/releases/${draft.id}/${action}`, body);
@@ -358,8 +358,8 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     const onSecret = maskOutput();
     console.log(`OpenVibe developer path against ${network}\n`);
     const started = Date.now();
-    const codes = (env.OV_CODES_URL || PRODUCTION_CODES).replace(/\/+$/, '');
-    const result = await runDeveloperPath({ network, codes, media: env.OV_MEDIA_URL || PRODUCTION_MEDIA, events: env.OV_EVENTS_URL || PRODUCTION_EVENTS, account, onSecret });
+    const services = (env.OV_SERVICES_URL || PRODUCTION_SERVICES).replace(/\/+$/, '');
+    const result = await runDeveloperPath({ network, services, media: env.OV_MEDIA_URL || PRODUCTION_MEDIA, events: env.OV_EVENTS_URL || PRODUCTION_EVENTS, account, onSecret });
     // --result <file>: a JSON record for the scheduled production run (OpenVibe.Host openvibe-devpath.timer,
     // shown on openvibe.network/status): step names and outcomes only — never an error text, URL, id or secret.
     const out = argv.indexOf('--result');
@@ -378,7 +378,7 @@ function writeResult(file, result, { network, started = Date.now(), now = Date.n
     return record;
 }
 
-module.exports = { runDeveloperPath, writeResult, GRANTS, STEPS, PRODUCTION_NETWORK, PRODUCTION_CODES };
+module.exports = { runDeveloperPath, writeResult, GRANTS, STEPS, PRODUCTION_NETWORK, PRODUCTION_SERVICES };
 
 if (require.main === module) {
     main().then((code) => { process.exitCode = code; }, (err) => { console.error(`developer-path: ${describeError(err)}`); process.exitCode = 1; });
