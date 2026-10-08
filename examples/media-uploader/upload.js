@@ -114,7 +114,7 @@ function explain(err) {
         case 'config.missing': return err.message;
         case 'invalid_client': return 'Network refused the client id or secret. Check OV_CLIENT_ID / OV_CLIENT_SECRET (rotate the secret in your project if it was lost).';
         case 'invalid_target': return 'Network does not issue tokens for openvibe.media to this app (its environment is not enabled for that audience).';
-        case 'invalid_scope': return 'The app holds no approved grant for this operation (media.object.upload to upload or delete, media.object.read to read). Request it on your app (openvibe.codes, or the projects API).';
+        case 'invalid_scope': return 'The app holds no approved grant for this operation (media.object.upload to upload or delete, media.object.read to read). Request it on your app (openvibe.services, or the projects API).';
         case 'capability.namespace_denied': return 'Your token is not valid for this project. OV_PROJECT_ID must be the project your app belongs to (or leave it empty).';
         case 'token.sandbox_refused': return 'Media refused a sandbox token on this route. Sandbox apps can use their own project tenant only (/api/v1/<project id>/files).';
         default: return isOpenVibeError(err) ? `${err.code}${err.detail ? `: ${err.detail}` : ''}${err.requestId ? ` (request ${err.requestId})` : ''}` : String(err && err.message);

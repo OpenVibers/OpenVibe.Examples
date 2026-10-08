@@ -47,6 +47,6 @@ Validation is offline and works today: `node validate.js mod.json`. The `--regis
 
 Publishing a mod is not public yet: registering a mod and managing installs (`games.mod.manage`)
 is a `first-party` capability and install grants (`mods.grant.manage`) are `planned`. The
-developer portal, [OpenVibe.Codes](https://openvibe.codes), is where manifests and releases are
+developer platform, [OpenVibe.Services](https://openvibe.services), is where manifests and releases are
 meant to be managed, but a mod still cannot reach Games through it. Mod ids are assigned by that
 flow; `--new-id` only gives a draft a well-formed id.
