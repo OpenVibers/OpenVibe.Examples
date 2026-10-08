@@ -84,8 +84,6 @@ async function runAgainstMock({ log, platformOptions = {} } = {}) {
     const lines = [];
     const result = await runDeveloperPath({
         network: PRODUCTION_NETWORK,
-        // The pinned openvibe-sdk v0.11.0 mock serves Events at its old origin; production defaults to openvibe.events.
-        events: 'https://events.openvibe.network',
         fetch: withAccounts(platform),
         account: { username: 'developer_path', password: 'mock-password-not-checked', register: true },
         log: (m) => { lines.push(m); if (log) log(m); },
