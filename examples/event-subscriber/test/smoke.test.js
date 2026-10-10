@@ -66,6 +66,8 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
     const b = await pub(env, { name: 'order.paid' });
 
     // ── pull: own topic by default, durable cursor ──────────
+    // Saved positions are Events' opaque cursors; the mock makes them as Events does (c1.<epoch>.<base64url(seq)>).
+    const cur = (seq) => `c1.0.${Buffer.from(String(seq), 'utf8').toString('base64url')}`;
     const pullEnv = { ...env, OV_CURSOR_PATH: path.join(dir, 'pull.json') };
     let seen = [];
     let s = createSubscriber(loadConfig(pullEnv), { fetch, log: quiet, onEvent: (e, { seq }) => { seen.push(seq); } });
@@ -73,7 +75,7 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
     assert.equal(await s.pullOnce({ limit: 2 }), 2);
     assert.deepEqual(seen, [a.seq, b.seq], 'own project only: not the other project, not the forged one');
     const head = platform.state.events.at(-1).seq;
-    assert.equal(createCursorStore(pullEnv.OV_CURSOR_PATH).get('pull'), head, 'cursor saved at the head');
+    assert.equal(createCursorStore(pullEnv.OV_CURSOR_PATH).get('pull'), cur(head), 'cursor saved at the head, as an opaque cursor');
 
     // A new process resumes from the cursor: only what is new.
     const c = await pub(env, { name: 'order.shipped' });
@@ -91,14 +93,14 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
         onEvent: (ev, { seq }) => { if (seq === e.seq) throw new Error('boom'); seen.push(seq); },
     });
     await assert.rejects(s.pullOnce(), /boom/);
-    assert.equal(createCursorStore(pullEnv.OV_CURSOR_PATH).get('pull'), d.seq);
+    assert.equal(createCursorStore(pullEnv.OV_CURSOR_PATH).get('pull'), cur(d.seq));
     s = createSubscriber(loadConfig(pullEnv), { fetch, log: quiet, onEvent: (ev, { seq }) => { seen.push(seq); } });
     await s.pullOnce();
     assert.deepEqual(seen, [d.seq, e.seq], 'the failed event is retried, nothing is skipped');
 
     // A gap: retention pruned the range the cursor still needs. onResync is told, reading continues.
     const gapEnv = { ...env, OV_CURSOR_PATH: path.join(dir, 'gap.json') };
-    createCursorStore(gapEnv.OV_CURSOR_PATH).set('pull', a.seq);
+    createCursorStore(gapEnv.OV_CURSOR_PATH).set('pull', cur(a.seq));
     platform.pruneEvents(c.seq);
     const f = await pub(env);
     const resyncs = [];
@@ -143,7 +145,8 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
     const p2 = platform.publishEvent(firstParty('public', 'media.object.deleted'));
     await waitFor(() => live.length === 2, 'two public events');
     assert.deepEqual(live.map((x) => x.seq), [p1.seq, p2.seq]);
-    await waitFor(() => createCursorStore(rtEnv.OV_CURSOR_PATH).get('realtime') === p2.seq, 'the realtime cursor');
+    // The realtime position is the SSE id as sent: an opaque cursor from Events, a bare seq from this mock.
+    await waitFor(() => createCursorStore(rtEnv.OV_CURSOR_PATH).get('realtime') === String(p2.seq), 'the realtime cursor');
 
     // The connection drops; an event published meanwhile arrives once after the reconnect.
     platform.dropRealtime();
@@ -165,7 +168,7 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
 
     // A cursor ahead of the stream (restored from another environment): a gap, then live events.
     const aheadPath = path.join(dir, 'ahead.json');
-    createCursorStore(aheadPath).set('realtime', 9999);
+    createCursorStore(aheadPath).set('realtime', '9999');
     const rtGaps = [];
     const rt3 = createSubscriber(loadConfig({ ...rtEnv, OV_CURSOR_PATH: aheadPath }), { fetch, log: quiet, onEvent() {}, onResync: (g, { via }) => rtGaps.push({ ...g, via }) });
     rt3.start();

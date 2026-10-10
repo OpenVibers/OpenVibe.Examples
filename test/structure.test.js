@@ -12,7 +12,9 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const EXPECTED = ['browser-app', 'chat-bot', 'event-subscriber', 'media-uploader', 'mod-manifest', 'node-server-app', 'oauth-app', 'tool-job', 'webhook-consumer'];
-const SDK = 'https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.35.2';
+// The pin every example must share: the repository's own (the pin bot moves them all at once).
+const ROOT_PKG = require(path.join(ROOT, 'package.json'));
+const SDK = (ROOT_PKG.dependencies || {})['openvibe-sdk'] || (ROOT_PKG.devDependencies || {})['openvibe-sdk'];
 
 const dirs = fs.readdirSync(path.join(ROOT, 'examples')).filter((d) => fs.statSync(path.join(ROOT, 'examples', d)).isDirectory()).sort();
 assert.deepEqual(dirs, EXPECTED, 'the nine charter examples');
@@ -38,7 +40,7 @@ for (const name of EXPECTED) {
     assert.equal(pkg.scripts.test, 'node test/smoke.test.js', `${name}: npm test runs the smoke test`);
     for (const [dep, spec] of Object.entries({ ...pkg.dependencies, ...pkg.devDependencies })) {
         assert.ok(!/^(file|link):/.test(spec), `${name}: ${dep} is not a local link`);
-        if (dep === 'openvibe-sdk') assert.equal(spec, SDK, `${name}: openvibe-sdk pinned to v0.35.0`);
+        if (dep === 'openvibe-sdk') assert.equal(spec, SDK, `${name}: openvibe-sdk pinned as the repository is (${SDK.split('/').pop()})`);
     }
 
     const readme = fs.readFileSync(path.join(dir, 'README.md'), 'utf8');

@@ -209,15 +209,16 @@ async function runDeveloperPath({ network = PRODUCTION_NETWORK, services = PRODU
     });
 
     await step('events', async () => {
-        const pub = await publishAppEvent(publishConfig(creds()), { name: 'developer_path.ran', subject: { type: 'check', id: 'developer-path' }, payload: { at: now().toISOString() } }, { fetch: fetchImpl });
-        say(`published ${pub.event_type} ${pub.event_id} -> seq ${pub.seq}`);
-        st.eventId = pub.event_id;
         const cursorPath = path.join(dir, 'cursor.json');
-        createCursorStore(cursorPath).set('pull', Math.max(0, pub.seq - 1));
         const seen = [];
         const s = createSubscriber(subscriberConfig({ ...creds(), OV_EVENTS_MODE: 'pull', OV_CURSOR_PATH: cursorPath }), {
             fetch: fetchImpl, log: { log: () => {}, error: (m) => say(m) }, onEvent: (event, { seq }) => { seen.push({ seq, id: event.event_id }); },
         });
+        // Start the subscriber at the head (an opaque cursor), then publish: the pull finds what came after it.
+        await s.startAtHead();
+        const pub = await publishAppEvent(publishConfig(creds()), { name: 'developer_path.ran', subject: { type: 'check', id: 'developer-path' }, payload: { at: now().toISOString() } }, { fetch: fetchImpl });
+        say(`published ${pub.event_type} ${pub.event_id}`);
+        st.eventId = pub.event_id;
         const topics = await s.resolveTopics();
         if (topics[0] !== `app.${projectKey(st.projectId)}.*`) throw new Error(`unexpected topic ${topics[0]}`);
         const n = await s.pullOnce();
@@ -249,7 +250,7 @@ async function runDeveloperPath({ network = PRODUCTION_NETWORK, services = PRODU
         if (write.status !== 403) throw new Error(`a write with the export token answered ${write.status}, not 403`);
         say('a write with it is refused (403)');
         const et = await mint('openvibe.events');
-        const pull = await fetchImpl(`${events.replace(/\/+$/, '')}/api/v1/events?topic=${encodeURIComponent(`app.${projectKey(st.projectId)}.*`)}&after_seq=0&limit=100`, { headers: auth(et) });
+        const pull = await fetchImpl(`${events.replace(/\/+$/, '')}/api/v1/events?topic=${encodeURIComponent(`app.${projectKey(st.projectId)}.*`)}&limit=100`, { headers: auth(et) });
         const got = pull.status === 200 ? ((await pull.json()).events || []) : [];
         if (!got.some((e) => (e.event || e).event_id === st.eventId)) throw new Error(`Events did not return the event published in step 7 with the export token (${pull.status})`);
         say(`Events returns the project's event ${st.eventId} with the other`);
