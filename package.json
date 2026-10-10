@@ -23,6 +23,6 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.37.2"
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.38.0"
   }
 }
