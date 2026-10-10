@@ -21,17 +21,19 @@ OV_EVENTS_MODE=realtime OV_TOPICS=chat.message.created node subscriber.js   # pu
   answered as a duplicate, so retries are safe). Another project's `app.*` topic is refused by the
   SDK before anything is sent (and by Events with `403 events.topic_not_allowed`).
   `OV_PLATFORM_TOPICS` adds public first-party topics (`live.stream.*`) to a pull.
-- **Pull** (`openvibe-sdk/events` `iterate()`): pages from the saved cursor to the head. The
-  cursor is saved after each handled event, and moved past non-matching events (the page's
-  `next_after_seq`) in `onPage`, which the SDK calls only after every item of that page was
-  handled. A handler that throws leaves the cursor on the last event that succeeded, so the failed
+- **Pull** (`openvibe-sdk/events` `iterate()`): pages from the saved cursor to the head. Every
+  position is Events' opaque cursor (ADR-042): kept as a string, handed back as `after`, never
+  computed with. The cursor is saved after each handled event, and moved past non-matching events
+  (the page's `next_cursor`) in `onPage`, which the SDK calls only after every item of that page was
+  handled. `startAtHead()` starts from now instead (the head's `latest_cursor`), skipping history. A handler that throws leaves the cursor on the last event that succeeded, so the failed
   event is retried next time.
 - **Gaps**: when Events can no longer supply part of the range (retention pruned it: sandbox app
   events are kept 7 days; or a restored cursor is ahead of the stream), `onResync(gap)` is called.
   Nothing can replay the missing events, so reload whatever state you derive from them.
 - **Realtime** (`openvibe-sdk/realtime` `subscribe()`): SSE from `/realtime/stream`,
-  anonymously, for public first-party events. It resumes from the saved cursor with
-  `Last-Event-ID`, and nothing is delivered twice. The app token is never sent on it.
+  anonymously, for public first-party events. Each callback gets the event's `cursor` (its SSE id,
+  openvibe-sdk 0.37.2), saved after the handler finished; it resumes from it with `Last-Event-ID`,
+  and nothing is delivered twice. The app token is never sent on it.
 - The cursor file is replaced atomically (write + rename).
 
 ## Files

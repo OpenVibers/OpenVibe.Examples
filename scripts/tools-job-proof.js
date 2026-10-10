@@ -107,9 +107,10 @@ async function runToolsJobProof({ network = PRODUCTION_NETWORK, toolsUrl, client
     });
 
     await step('cursor', async () => {
-        const page = await st.events.pull({ topic: 'tools.job.*', afterSeq: Number.MAX_SAFE_INTEGER, limit: 1 });
-        st.cursor = Number(page.latest_seq) || 0;
-        say(`Events head: seq ${st.cursor}`);
+        const page = await st.events.pull({ topic: 'tools.job.*', limit: 1 });
+        st.cursor = page.latest_cursor;
+        if (!st.cursor) throw new Error('Events answered no latest_cursor (Events#45)');
+        say('Events head noted (an opaque cursor)');
     });
 
     await step('submit', async () => {
@@ -162,13 +163,15 @@ async function runToolsJobProof({ network = PRODUCTION_NETWORK, toolsUrl, client
         const deadline = Date.now() + eventsWaitMs;
         for (;;) {
             let page;
+            let moved;
             do {
-                page = await st.events.pull({ topic: 'tools.job.*', afterSeq: after, limit: 200 });
+                page = await st.events.pull({ topic: 'tools.job.*', after, limit: 200 });
                 for (const { seq, event } of page.events || []) {
                     if (event && event.subject && event.subject.id === st.jobId && EVENT_TYPES.includes(event.event_type)) found.set(event.event_type, seq);
                 }
-                after = page.next_after_seq != null ? page.next_after_seq : after;
-            } while ((page.events || []).length && after < page.latest_seq);
+                moved = Boolean(page.next_cursor) && page.next_cursor !== after;
+                if (moved) after = page.next_cursor;
+            } while (moved && (page.events || []).length === 200);
             if (EVENT_TYPES.every((t) => found.has(t))) break;
             if (Date.now() >= deadline) throw new Error(`not in the Events store after ${eventsWaitMs / 1000} s: ${EVENT_TYPES.filter((t) => !found.has(t)).join(', ')}`);
             await sleep(pollMs);

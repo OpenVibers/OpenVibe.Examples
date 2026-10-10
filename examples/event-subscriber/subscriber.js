@@ -18,8 +18,9 @@
  *
  * The cursor is saved only AFTER an event was handled, so a crash replays at most the event in
  * hand (make your handler idempotent on event_id). In pull mode the cursor also moves past events
- * that did not match the topic, to the page's next_after_seq: iterate() calls onPage only after
- * every item of that page was handled, so saving it there is crash-safe.
+ * that did not match the topic, to the page's next_cursor: iterate() calls onPage only after
+ * every item of that page was handled, so saving it there is crash-safe. Every position saved is
+ * Events' opaque cursor (ADR-042): keep it as a string and hand it back; never compute with it.
  *
  * A gap means Events can no longer give you part of the range (retention pruned it: sandbox app
  * events are kept 7 days; or the cursor is ahead of the stream after a restore). Nothing can replay
@@ -58,15 +59,16 @@ function loadConfig(env = process.env) {
     };
 }
 
-/** A tiny durable cursor: { realtime: seq, pull: seq } in a JSON file, replaced atomically. */
+/** A tiny durable cursor: { realtime: <cursor>, pull: <cursor> } in a JSON file, replaced atomically. */
 function createCursorStore(file) {
     let state = {};
     try { state = JSON.parse(fs.readFileSync(file, 'utf8')) || {}; } catch { state = {}; }
+    const usable = (v) => typeof v === 'string' && v.length > 0;
     return {
-        get: (name) => (Number.isFinite(state[name]) ? state[name] : null),
-        set(name, seq) {
-            if (!Number.isFinite(seq) || seq === state[name]) return;
-            state = { ...state, [name]: seq };
+        get: (name) => (usable(state[name]) ? state[name] : null),
+        set(name, cursor) {
+            if (!usable(cursor) || cursor === state[name]) return;
+            state = { ...state, [name]: cursor };
             fs.mkdirSync(path.dirname(file), { recursive: true });
             const tmp = `${file}.${process.pid}.tmp`;
             fs.writeFileSync(tmp, JSON.stringify(state));
@@ -123,15 +125,15 @@ function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = c
         const iterator = ev.iterate({
             topic: config.topics.length ? config.topics : '*',
             platformTopics: config.platformTopics,
-            afterSeq: cursor.get('pull') || 0,
+            ...(cursor.get('pull') ? { after: cursor.get('pull') } : {}),
             limit,
             onGap: (g) => gap(g, 'pull'),
             // After every item of the page was handled: also moves past events of other topics.
-            onPage: (page) => cursor.set('pull', page.next_after_seq),
+            onPage: (page) => cursor.set('pull', page.next_cursor),
         });
-        for await (const { seq, event } of iterator) {
+        for await (const { seq, cursor: at, event } of iterator) {
             await onEvent(event, { seq, via: 'pull' });
-            cursor.set('pull', seq);
+            cursor.set('pull', at);
             handled++;
             stats.handled++;
         }
@@ -155,11 +157,11 @@ function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = c
     // ── realtime ────────────────────────────────────────────
     function startRealtime() {
         let chain = Promise.resolve();
-        sub = subscribe(config.topics, (event, { seq }) => {
-            // Handle strictly in order; save the cursor only after the handler finished.
+        sub = subscribe(config.topics, (event, { seq, cursor: at }) => {
+            // Handle strictly in order; save the cursor (the event's SSE id) only after the handler finished.
             chain = chain.then(async () => {
                 await onEvent(event, { seq, via: 'realtime' });
-                cursor.set('realtime', seq);
+                cursor.set('realtime', at);
                 stats.handled++;
             }).catch((err) => log.error(`[events] handler failed at seq ${seq}: ${err.message}`));
         }, {
@@ -168,10 +170,18 @@ function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = c
             transport: 'fetch',
             lastEventId: cursor.get('realtime'),
             onGap: (g) => { chain = chain.then(() => gap(g, 'realtime')); },
-            onOpen: () => log.log(`[events] realtime connected (${config.topics.join(', ')}) from seq ${sub ? sub.lastEventId : cursor.get('realtime')}`),
+            onOpen: () => log.log(`[events] realtime connected (${config.topics.join(', ')}) from ${(sub ? sub.lastEventId : cursor.get('realtime')) || 'now'}`),
             onError: (err) => log.error(`[events] realtime: ${isOpenVibeError(err) ? err.code : err.message}`),
         });
         return sub;
+    }
+
+    /** Start pulling from now: the pull cursor becomes Events' head (latest_cursor), so history is skipped. → the cursor */
+    async function startAtHead() {
+        const ev = await eventsForApp();
+        const page = await ev.pull({ topic: config.topics.length ? config.topics : '*', platformTopics: config.platformTopics, limit: 1 });
+        if (page.latest_cursor) cursor.set('pull', page.latest_cursor);
+        return page.latest_cursor || null;
     }
 
     return {
@@ -179,6 +189,7 @@ function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = c
         stats,
         cursor,
         pullOnce,
+        startAtHead,
         resolveTopics,
         start() {
             stopped = false;
