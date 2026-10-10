@@ -145,8 +145,9 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
     const p2 = platform.publishEvent(firstParty('public', 'media.object.deleted'));
     await waitFor(() => live.length === 2, 'two public events');
     assert.deepEqual(live.map((x) => x.seq), [p1.seq, p2.seq]);
-    // The realtime position is the SSE id as sent: an opaque cursor from Events, a bare seq from this mock.
-    await waitFor(() => createCursorStore(rtEnv.OV_CURSOR_PATH).get('realtime') === String(p2.seq), 'the realtime cursor');
+    // The realtime position is the SSE id as sent: Events' opaque cursor (the mock emits the same form; never parsed).
+    const cursorOf = (seq) => `c1.0.${Buffer.from(String(seq), 'utf8').toString('base64url')}`;
+    await waitFor(() => createCursorStore(rtEnv.OV_CURSOR_PATH).get('realtime') === cursorOf(p2.seq), 'the realtime cursor');
 
     // The connection drops; an event published meanwhile arrives once after the reconnect.
     platform.dropRealtime();
@@ -168,7 +169,7 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
 
     // A cursor ahead of the stream (restored from another environment): a gap, then live events.
     const aheadPath = path.join(dir, 'ahead.json');
-    createCursorStore(aheadPath).set('realtime', '9999');
+    createCursorStore(aheadPath).set('realtime', cursorOf(9999));
     const rtGaps = [];
     const rt3 = createSubscriber(loadConfig({ ...rtEnv, OV_CURSOR_PATH: aheadPath }), { fetch, log: quiet, onEvent() {}, onResync: (g, { via }) => rtGaps.push({ ...g, via }) });
     rt3.start();
