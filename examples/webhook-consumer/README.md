@@ -21,8 +21,10 @@ node --env-file=.env --env-file=.env.webhook server.js                          
 - **Signature first, on the raw bytes.** `parseDelivery()` checks
   `sha256=<HMAC-SHA256 of the raw body>` in constant time before anything is parsed. A wrong
   secret, a changed byte or a missing header is `401`, with no detail.
-- **Exactly once.** `createInbox(db).once(consumer, event_id, fn)` writes the receipt and runs your
-  handler in one SQLite transaction. A redelivery (a retry after a lost `2xx`, a replay) is
+- **Exactly once.** `createPgInbox(db).once(consumer, event_id, fn)` writes the receipt and runs your
+  handler in one PostgreSQL transaction (`fn` gets the transaction handle; write with it and the write
+  commits with the receipt). The database is `OV_DATABASE_URL`, or an embedded PGlite in `OV_DATA_DIR`
+  (default `./data/pg`) when no URL is set, so the example needs nothing installed but Node. A redelivery (a retry after a lost `2xx`, a replay) is
   answered `200 { duplicate: true }` without running the handler. A handler that throws leaves
   no receipt, the consumer answers `500`, and Events retries with backoff.
 - **The signed body is the truth.** `X-OpenVibe-Event-Id` must match the body's `event_id`.

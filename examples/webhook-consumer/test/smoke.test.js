@@ -45,12 +45,13 @@ const ENDPOINT = 'https://hooks.example.com/webhooks/openvibe';
 
     // 2. Run the consumer with that secret.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ov-webhook-'));
-    const config = loadConfig({ OV_WEBHOOK_SECRET: created.secret, OV_DB_PATH: path.join(dir, 'consumer.db') });
+    const config = loadConfig({ OV_WEBHOOK_SECRET: created.secret, OV_DATA_DIR: path.join(dir, 'pg') });
+    const db = await openDatabase(config);
     const handled = [];
     let failNext = false;
     const logs = [];
     const consumer = createConsumer(config, {
-        db: openDatabase(config.dbPath),
+        db,
         handle(event) {
             if (failNext) { failNext = false; throw new Error('downstream unavailable'); }
             handled.push(event.event_id);
@@ -95,7 +96,7 @@ const ENDPOINT = 'https://hooks.example.com/webhooks/openvibe';
     round = await platform.deliverEvents({ fetch: worker });
     assert.equal(round.failed, 1);
     assert.equal(round.attempts[0].status, 500);
-    assert.equal(consumer.inbox.seen('webhook-consumer', e2.event_id), false);
+    assert.equal(await consumer.inbox.seen('webhook-consumer', e2.event_id), false);
     round = await platform.deliverEvents({ fetch: worker });
     assert.deepEqual([round.delivered, round.attempts[0].attempt], [1, 2]);
     assert.deepEqual(handled, [e1.event_id, e2.event_id]);
@@ -116,8 +117,8 @@ const ENDPOINT = 'https://hooks.example.com/webhooks/openvibe';
 
     // Secret rotation: deliveries signed with the previous secret are accepted while it is configured.
     consumer.server.close();
-    const rotated = createConsumer(loadConfig({ OV_WEBHOOK_SECRET: 'whsec_new_secret_after_rotation_0000000000', OV_WEBHOOK_SECRET_PREVIOUS: created.secret, OV_DB_PATH: config.dbPath }), {
-        db: consumer.db, handle: (event) => handled.push(event.event_id), log: { log() {}, error() {} },
+    const rotated = createConsumer(loadConfig({ OV_WEBHOOK_SECRET: 'whsec_new_secret_after_rotation_0000000000', OV_WEBHOOK_SECRET_PREVIOUS: created.secret, OV_DATA_DIR: config.dataDir }), {
+        db, handle: (event) => handled.push(event.event_id), log: { log() {}, error() {} },
     });
     await new Promise((res) => rotated.server.listen(0, '127.0.0.1', res));
     local = `http://127.0.0.1:${rotated.server.address().port}/webhooks/openvibe`;
@@ -130,7 +131,7 @@ const ENDPOINT = 'https://hooks.example.com/webhooks/openvibe';
     assert.deepEqual(handled, [e1.event_id, e2.event_id, e3.event_id, e4.event_id]);
 
     // The receipt and the app's own row were written together.
-    const rows = consumer.db.prepare('SELECT event_id FROM received_events ORDER BY seq').all().map((x) => x.event_id);
+    const rows = (await db.many('SELECT event_id FROM received_events ORDER BY id')).map((x) => x.event_id);
     assert.deepEqual(rows, handled);
 
     // Oversized bodies are refused before parsing.
@@ -141,7 +142,7 @@ const ENDPOINT = 'https://hooks.example.com/webhooks/openvibe';
     assert.ok(!logs.join('\n').includes(created.secret));
 
     rotated.server.close();
-    consumer.db.close();
+    await db.close();
     fs.rmSync(dir, { recursive: true, force: true });
     console.log('webhook-consumer: ok');
 })().catch((err) => { console.error(err); process.exit(1); });
