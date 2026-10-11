@@ -56,7 +56,7 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
     const stored = platform.state.events.find((x) => x.event.event_id === a.event_id).event;
     assert.equal(stored.source, appSource(app.id));
     assert.deepEqual(stored.actor, { type: 'app', id: app.id });
-    // Same event_id again: Events answers with the stored seq, nothing new.
+    // Same event_id again: Events answers with the stored position, nothing new.
     assert.equal((await pub(env, { name: 'order.created', eventId: a.event_id })).duplicate, true);
     await assert.rejects(pub(env, { name: 'Bad Name' }), /dot-separated/);
 
@@ -67,22 +67,24 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
 
     // ── pull: own topic by default, durable cursor ──────────
     // Saved positions are Events' opaque cursors; the mock makes them as Events does (c1.<epoch>.<base64url(seq)>).
+    // A publish answer carries its event's cursor (no sequence number); posOf reads the position back, test only.
     const cur = (seq) => `c1.0.${Buffer.from(String(seq), 'utf8').toString('base64url')}`;
+    const posOf = (c) => Number(Buffer.from(String(c).split('.')[2], 'base64url').toString('utf8'));
     const pullEnv = { ...env, OV_CURSOR_PATH: path.join(dir, 'pull.json') };
     let seen = [];
-    let s = createSubscriber(loadConfig(pullEnv), { fetch, log: quiet, onEvent: (e, { seq }) => { seen.push(seq); } });
+    let s = createSubscriber(loadConfig(pullEnv), { fetch, log: quiet, onEvent: (ev) => { seen.push(ev.event_id); } });
     assert.deepEqual(await s.resolveTopics(), [`app.${key}.*`], 'the project id comes from the app token');
     assert.equal(await s.pullOnce({ limit: 2 }), 2);
-    assert.deepEqual(seen, [a.seq, b.seq], 'own project only: not the other project, not the forged one');
+    assert.deepEqual(seen, [a.event_id, b.event_id], 'own project only: not the other project, not the forged one');
     const head = platform.state.events.at(-1).seq;
     assert.equal(createCursorStore(pullEnv.OV_CURSOR_PATH).get('pull'), cur(head), 'cursor saved at the head, as an opaque cursor');
 
     // A new process resumes from the cursor: only what is new.
     const c = await pub(env, { name: 'order.shipped' });
     seen = [];
-    s = createSubscriber(loadConfig(pullEnv), { fetch, log: quiet, onEvent: (e, { seq }) => { seen.push(seq); } });
+    s = createSubscriber(loadConfig(pullEnv), { fetch, log: quiet, onEvent: (ev) => { seen.push(ev.event_id); } });
     assert.equal(await s.pullOnce(), 1);
-    assert.deepEqual(seen, [c.seq]);
+    assert.deepEqual(seen, [c.event_id]);
 
     // A handler that fails leaves the cursor on the last event that succeeded.
     const d = await pub(env);
@@ -90,25 +92,25 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
     seen = [];
     s = createSubscriber(loadConfig(pullEnv), {
         fetch, log: quiet,
-        onEvent: (ev, { seq }) => { if (seq === e.seq) throw new Error('boom'); seen.push(seq); },
+        onEvent: (ev) => { if (ev.event_id === e.event_id) throw new Error('boom'); seen.push(ev.event_id); },
     });
     await assert.rejects(s.pullOnce(), /boom/);
-    assert.equal(createCursorStore(pullEnv.OV_CURSOR_PATH).get('pull'), cur(d.seq));
-    s = createSubscriber(loadConfig(pullEnv), { fetch, log: quiet, onEvent: (ev, { seq }) => { seen.push(seq); } });
+    assert.equal(createCursorStore(pullEnv.OV_CURSOR_PATH).get('pull'), d.cursor);
+    s = createSubscriber(loadConfig(pullEnv), { fetch, log: quiet, onEvent: (ev) => { seen.push(ev.event_id); } });
     await s.pullOnce();
-    assert.deepEqual(seen, [d.seq, e.seq], 'the failed event is retried, nothing is skipped');
+    assert.deepEqual(seen, [d.event_id, e.event_id], 'the failed event is retried, nothing is skipped');
 
     // A gap: retention pruned the range the cursor still needs. onResync is told, reading continues.
     const gapEnv = { ...env, OV_CURSOR_PATH: path.join(dir, 'gap.json') };
-    createCursorStore(gapEnv.OV_CURSOR_PATH).set('pull', cur(a.seq));
-    platform.pruneEvents(c.seq);
+    createCursorStore(gapEnv.OV_CURSOR_PATH).set('pull', a.cursor);
+    platform.pruneEvents(posOf(c.cursor));
     const f = await pub(env);
     const resyncs = [];
     seen = [];
-    s = createSubscriber(loadConfig(gapEnv), { fetch, log: quiet, onEvent: (ev, { seq }) => { seen.push(seq); }, onResync: (g, { via }) => resyncs.push({ ...g, via }) });
+    s = createSubscriber(loadConfig(gapEnv), { fetch, log: quiet, onEvent: (ev) => { seen.push(ev.event_id); }, onResync: (g, { via }) => resyncs.push({ ...g, via }) });
     await s.pullOnce();
-    assert.deepEqual(resyncs, [{ from_seq: a.seq + 1, to_seq: c.seq, via: 'pull' }]);
-    assert.deepEqual(seen, [d.seq, e.seq, f.seq]);
+    assert.deepEqual(resyncs, [{ from_seq: posOf(a.cursor) + 1, to_seq: posOf(c.cursor), via: 'pull' }]);
+    assert.deepEqual(seen, [d.event_id, e.event_id, f.event_id]);
 
     // Public first-party topics can be added (the earlier one was pruned: publish another).
     platform.publishEvent(firstParty('public', 'live.stream.started'));
@@ -137,14 +139,14 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
     // ── realtime: anonymous, public first-party events only, resume ──
     const rtEnv = { OV_EVENTS_MODE: 'realtime', OV_TOPICS: 'media.object.*', OV_CURSOR_PATH: path.join(dir, 'realtime.json') };
     const live = [];
-    const rt = createSubscriber(loadConfig(rtEnv), { fetch, log: quiet, onEvent: (ev, { seq }) => { live.push({ seq, type: ev.event_type }); } });
+    const rt = createSubscriber(loadConfig(rtEnv), { fetch, log: quiet, onEvent: (ev) => { live.push({ id: ev.event_id, type: ev.event_type }); } });
     const subscription = rt.start();
     await waitFor(() => subscription.connected, 'the realtime connection');
     const p1 = platform.publishEvent(firstParty());
     platform.publishEvent(firstParty('internal'));                           // never reaches an anonymous viewer
     const p2 = platform.publishEvent(firstParty('public', 'media.object.deleted'));
     await waitFor(() => live.length === 2, 'two public events');
-    assert.deepEqual(live.map((x) => x.seq), [p1.seq, p2.seq]);
+    assert.deepEqual(live.map((x) => x.id), [p1.event_id, p2.event_id]);
     // The realtime position is the SSE id as sent: Events' opaque cursor (the mock emits the same form; never parsed).
     const cursorOf = (seq) => `c1.0.${Buffer.from(String(seq), 'utf8').toString('base64url')}`;
     await waitFor(() => createCursorStore(rtEnv.OV_CURSOR_PATH).get('realtime') === cursorOf(p2.seq), 'the realtime cursor');
@@ -153,7 +155,7 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
     platform.dropRealtime();
     const p3 = platform.publishEvent(firstParty());
     await waitFor(() => live.length === 3, 'the event published during the drop');
-    assert.equal(live[2].seq, p3.seq);
+    assert.equal(live[2].id, p3.event_id);
     await new Promise((r) => setTimeout(r, 100));
     assert.equal(live.length, 3, 'no duplicates after resuming');
     rt.stop();
@@ -161,10 +163,10 @@ const firstParty = (visibility = 'public', type = 'media.object.uploaded') => ({
     // A restart resumes from the saved cursor: the event published while stopped is delivered.
     const p4 = platform.publishEvent(firstParty());
     const after = [];
-    const rt2 = createSubscriber(loadConfig(rtEnv), { fetch, log: quiet, onEvent: (ev, { seq }) => { after.push(seq); } });
+    const rt2 = createSubscriber(loadConfig(rtEnv), { fetch, log: quiet, onEvent: (ev) => { after.push(ev.event_id); } });
     rt2.start();
     await waitFor(() => after.length === 1, 'the event published while stopped');
-    assert.deepEqual(after, [p4.seq]);
+    assert.deepEqual(after, [p4.event_id]);
     rt2.stop();
 
     // A cursor ahead of the stream (restored from another environment): a gap, then live events.

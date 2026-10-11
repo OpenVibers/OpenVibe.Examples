@@ -79,7 +79,7 @@ function createCursorStore(file) {
 
 /**
  * createSubscriber(config, { onEvent, onResync, fetch, log })
- *   onEvent(event, { seq, via })       handle one event (may be async)
+ *   onEvent(event, { cursor, via })    handle one event (may be async); dedupe on event.event_id
  *   onResync(gap, { via })             state derived from events may be stale: reload it
  */
 function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = console, cursor = createCursorStore(config.cursorPath) } = {}) {
@@ -131,8 +131,8 @@ function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = c
             // After every item of the page was handled: also moves past events of other topics.
             onPage: (page) => cursor.set('pull', page.next_cursor),
         });
-        for await (const { seq, cursor: at, event } of iterator) {
-            await onEvent(event, { seq, via: 'pull' });
+        for await (const { cursor: at, event } of iterator) {
+            await onEvent(event, { cursor: at, via: 'pull' });
             cursor.set('pull', at);
             handled++;
             stats.handled++;
@@ -157,13 +157,13 @@ function createSubscriber(config, { onEvent, onResync = () => {}, fetch, log = c
     // ── realtime ────────────────────────────────────────────
     function startRealtime() {
         let chain = Promise.resolve();
-        sub = subscribe(config.topics, (event, { seq, cursor: at }) => {
+        sub = subscribe(config.topics, (event, { cursor: at }) => {
             // Handle strictly in order; save the cursor (the event's SSE id) only after the handler finished.
             chain = chain.then(async () => {
-                await onEvent(event, { seq, via: 'realtime' });
+                await onEvent(event, { cursor: at, via: 'realtime' });
                 cursor.set('realtime', at);
                 stats.handled++;
-            }).catch((err) => log.error(`[events] handler failed at seq ${seq}: ${err.message}`));
+            }).catch((err) => log.error(`[events] handler failed at ${event.event_id}: ${err.message}`));
         }, {
             client: anonymous,
             fetch,
@@ -209,8 +209,8 @@ if (require.main === module) {
     let config;
     try { config = loadConfig(); } catch (err) { console.error(err.message); process.exit(2); }
     const s = createSubscriber(config, {
-        onEvent(event, { seq, via }) {
-            console.log(`${via} #${seq} ${event.event_type} ${event.event_id} subject=${event.subject && `${event.subject.type}:${event.subject.id}`}`);
+        onEvent(event, { via }) {
+            console.log(`${via} ${event.event_type} ${event.event_id} subject=${event.subject && `${event.subject.type}:${event.subject.id}`}`);
         },
         onResync(gap) {
             console.log(`resync needed: events ${gap.from_seq}..${gap.to_seq} are gone; reload your state from its source`);
