@@ -6,7 +6,7 @@
  *
  *   node --env-file=.env server.js        # POST http://localhost:3003/webhooks/openvibe
  *
- * A delivery is POSTed as { "event": <events.event-envelope@1>, "seq": <n> } with
+ * A delivery is POSTed as { "event": <events.event-envelope@1> } (no sequence number: dedupe on the event id) with
  * X-OpenVibe-Timestamp: <unix seconds> and
  * X-OpenVibe-Signature-V2: t=<that timestamp>,v2=<HMAC-SHA256 of "<t>.<raw body>" with the subscription secret>
  * (plus the older body-only X-OpenVibe-Signature, which this consumer does not accept on its own).
@@ -16,16 +16,20 @@
  *      constant time, refuses a timestamp more than 300 s from this clock or a missing v2 header
  *      (a replayed capture), and parses it. A bad signature is 401 and nothing else is said.
  *   3. Delivery is at least once (retries, replays). inbox.once() records the event id and runs
- *      the handler in ONE SQLite transaction, so a repeat is answered 200 without running it again,
- *      and a handler that throws leaves no receipt: the 500 makes Events retry later.
+ *      the handler in ONE PostgreSQL transaction (openvibe-sdk/events createPgInbox), so a repeat is
+ *      answered 200 without running it again, and a handler that throws leaves no receipt: the 500 makes
+ *      Events retry later.
+ *
+ * The database is PostgreSQL: OV_DATABASE_URL, or an embedded PGlite in OV_DATA_DIR (default ./data/pg) when no URL
+ * is set, so the example runs with nothing installed but Node.
  *
  * Secret rotation: set OV_WEBHOOK_SECRET_PREVIOUS to the old secret while both are in use.
  */
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
-const Database = require('better-sqlite3');
-const { parseDelivery, createInbox } = require('openvibe-sdk/events');
+const { createDb, sql } = require('openvibe-sdk/db');
+const { parseDelivery, createPgInbox, inboxSchema } = require('openvibe-sdk/events');
 
 const MAX_BODY = 1024 * 1024;
 const CONSUMER = 'webhook-consumer';
@@ -38,36 +42,41 @@ function loadConfig(env = process.env) {
     }
     return {
         secrets: [env.OV_WEBHOOK_SECRET, env.OV_WEBHOOK_SECRET_PREVIOUS].filter(Boolean),
-        dbPath: env.OV_DB_PATH || path.join(__dirname, 'data', 'webhook-consumer.db'),
+        databaseUrl: env.OV_DATABASE_URL || null,
+        dataDir: env.OV_DATA_DIR || path.join(__dirname, 'data', 'pg'),
         port: Number(env.OV_PORT || 3003),
         path: env.OV_WEBHOOK_PATH || '/webhooks/openvibe',
     };
 }
 
-function openDatabase(dbPath) {
-    if (dbPath !== ':memory:') fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    const db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-    db.exec(`CREATE TABLE IF NOT EXISTS received_events (
-        event_id    TEXT PRIMARY KEY,
-        event_type  TEXT NOT NULL,
-        source      TEXT NOT NULL,
-        seq         INTEGER,
-        subject     TEXT,
-        received_at TEXT NOT NULL
+/** The database and its two tables: the inbox's receipts and the app's own row per event. */
+async function openDatabase(config) {
+    let db;
+    if (config.databaseUrl) db = createDb({ url: config.databaseUrl, service: 'webhook-consumer' });
+    else {
+        if (config.dataDir !== 'memory') fs.mkdirSync(config.dataDir, { recursive: true });
+        db = createDb({ pglite: config.dataDir === 'memory' ? true : config.dataDir, service: 'webhook-consumer' });
+    }
+    await db.query(inboxSchema());
+    await db.query(`CREATE TABLE IF NOT EXISTS received_events (
+        id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        event_id    text NOT NULL UNIQUE,
+        event_type  text NOT NULL,
+        source      text NOT NULL,
+        subject     text,
+        received_at timestamptz NOT NULL DEFAULT now()
     )`);
     return db;
 }
 
 /**
- * createConsumer(config, { db, handle, log })
- *   handle(event, { seq, attempt }) runs inside the inbox transaction and must be synchronous
- *   (better-sqlite3). Put side effects that need the network in your own outbox table instead.
+ * createConsumer(config, { db, handle, log })   db: from openDatabase(config)
+ *   handle(event, { attempt }, t) runs inside the inbox transaction (t, the transaction handle: write with it and the
+ *   write commits with the receipt). Put side effects that need the network in your own outbox table instead.
  */
-function createConsumer(config, { db = openDatabase(config.dbPath), handle = () => {}, log = console } = {}) {
-    const inbox = createInbox(db);
-    inbox.ensureSchema();
-    const record = db.prepare('INSERT INTO received_events (event_id, event_type, source, seq, subject, received_at) VALUES (?, ?, ?, ?, ?, ?)');
+function createConsumer(config, { db, handle = () => {}, log = console } = {}) {
+    if (!db) throw new TypeError('createConsumer: pass { db } from openDatabase(config)');
+    const inbox = createPgInbox(db);
 
     function verify(raw, headers) {
         for (const secret of config.secrets) {
@@ -77,20 +86,20 @@ function createConsumer(config, { db = openDatabase(config.dbPath), handle = () 
         return null;
     }
 
-    function receive(raw, headers) {
+    async function receive(raw, headers) {
         const delivery = verify(raw, headers);
         if (!delivery) return { status: 401, body: { error: 'bad_signature' } };
-        const { event, seq, attempt } = delivery;
+        const { event, attempt } = delivery;
         if (!event || typeof event.event_id !== 'string' || typeof event.event_type !== 'string') return { status: 400, body: { error: 'bad_envelope' } };
         // The header is informational; the signed body is the truth. They must agree.
         const headerId = headers['x-openvibe-event-id'];
         if (headerId && headerId !== event.event_id) return { status: 400, body: { error: 'event_id_mismatch' } };
-        const out = inbox.once(CONSUMER, event.event_id, () => {
-            record.run(event.event_id, event.event_type, String(event.source || ''), Number.isFinite(seq) ? seq : null,
-                event.subject ? `${event.subject.type}:${event.subject.id}` : null, new Date().toISOString());
-            return handle(event, { seq, attempt });
+        const out = await inbox.once(CONSUMER, event.event_id, async (t) => {
+            await t.exec(sql`INSERT INTO received_events (event_id, event_type, source, subject)
+                VALUES (${event.event_id}, ${event.event_type}, ${String(event.source || '')}, ${event.subject ? `${event.subject.type}:${event.subject.id}` : null})`);
+            return await handle(event, { attempt }, t);
         });
-        log.log(`[webhook] ${event.event_type} ${event.event_id} seq=${seq} attempt=${attempt}${out.duplicate ? ' (duplicate, skipped)' : ''}`);
+        log.log(`[webhook] ${event.event_type} ${event.event_id} attempt=${attempt}${out.duplicate ? ' (duplicate, skipped)' : ''}`);
         return { status: 200, body: { ok: true, duplicate: out.duplicate } };
     }
 
@@ -110,10 +119,10 @@ function createConsumer(config, { db = openDatabase(config.dbPath), handle = () 
             if (size > MAX_BODY) { tooLarge = true; chunks.length = 0; return; }
             chunks.push(c);
         });
-        req.on('end', () => {
+        req.on('end', async () => {
             if (tooLarge) return send(413, { error: 'too_large' });
             try {
-                const out = receive(Buffer.concat(chunks), req.headers);
+                const out = await receive(Buffer.concat(chunks), req.headers);
                 send(out.status, out.body);
             } catch (err) {
                 // No receipt was written: Events retries this delivery with backoff.
@@ -129,12 +138,15 @@ function createConsumer(config, { db = openDatabase(config.dbPath), handle = () 
 if (require.main === module) {
     let config;
     try { config = loadConfig(); } catch (err) { console.error(err.message); process.exit(2); }
-    const { server } = createConsumer(config, {
-        handle(event) {
-            // Your side effect goes here (synchronous, same transaction as the receipt).
-        },
-    });
-    server.listen(config.port, () => console.log(`webhook-consumer: POST http://localhost:${config.port}${config.path}`));
+    openDatabase(config).then((db) => {
+        const { server } = createConsumer(config, {
+            db,
+            async handle(event, meta, t) {
+                // Your side effect goes here: write with `t` and it commits with the receipt.
+            },
+        });
+        server.listen(config.port, () => console.log(`webhook-consumer: POST http://localhost:${config.port}${config.path}`));
+    }).catch((err) => { console.error(`webhook-consumer: ${err.message}`); process.exit(1); });
 }
 
 module.exports = { loadConfig, openDatabase, createConsumer, CONSUMER };
