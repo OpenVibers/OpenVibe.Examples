@@ -69,7 +69,7 @@ async function main() {
 
     const { createUploader, explain } = require(path.join(ROOT, 'examples/media-uploader/upload'));
     const { projectKey } = require('openvibe-sdk/events');
-    const { createSubscriber, createCursorStore, loadConfig: subscriberConfig } = require(path.join(ROOT, 'examples/event-subscriber/subscriber'));
+    const { createSubscriber, loadConfig: subscriberConfig } = require(path.join(ROOT, 'examples/event-subscriber/subscriber'));
     const { publishAppEvent, loadConfig: publishConfig } = require(path.join(ROOT, 'examples/event-subscriber/publish'));
     const { createJobRunner, loadConfig: jobConfig } = require(path.join(ROOT, 'examples/tool-job/run-job'));
     const { loadConfig: mediaConfig } = require(path.join(ROOT, 'examples/media-uploader/upload'));
@@ -108,21 +108,22 @@ async function main() {
     });
 
     await step('event-subscriber: publish to the own topic, then pull it', async () => {
-        const pub = await publishAppEvent(publishConfig(base), { name: 'e2e.ran', subject: { type: 'check', id: 'e2e' }, payload: { at: new Date().toISOString() } });
-        console.log(`    published ${pub.event_type} ${pub.event_id} -> seq ${pub.seq}${pub.duplicate ? ' (duplicate)' : ''}`);
         const cursorPath = path.join(dir, 'cursor.json');
-        createCursorStore(cursorPath).set('pull', Math.max(0, pub.seq - 1));
         const seen = [];
         const s = createSubscriber(subscriberConfig({ ...base, OV_EVENTS_MODE: 'pull', OV_CURSOR_PATH: cursorPath }), {
-            log, onEvent: (event, { seq }) => { seen.push({ seq, id: event.event_id, type: event.event_type }); },
+            log, onEvent: (event) => { seen.push({ id: event.event_id, type: event.event_type }); },
         });
+        // Start at the head (an opaque cursor), then publish: the pull finds what came after it.
+        await s.startAtHead();
+        const pub = await publishAppEvent(publishConfig(base), { name: 'e2e.ran', subject: { type: 'check', id: 'e2e' }, payload: { at: new Date().toISOString() } });
+        console.log(`    published ${pub.event_type} ${pub.event_id}${pub.duplicate ? ' (duplicate)' : ''}`);
         const topics = await s.resolveTopics();
         if (topics[0] !== `app.${projectKey(env.OV_PROJECT_ID)}.*`) throw new Error(`unexpected topic ${topics[0]}`);
         const n = await s.pullOnce();
-        console.log(`    pulled ${topics.join(', ')} from seq ${pub.seq - 1}: ${n} event(s), cursor now ${createCursorStore(cursorPath).get('pull')}`);
+        console.log(`    pulled ${topics.join(', ')} from the head: ${n} event(s)`);
         const mine = seen.find((e) => e.id === pub.event_id);
         if (!mine) throw new Error(`the published event ${pub.event_id} was not in the pull`);
-        console.log(`    found ${mine.id} at seq ${mine.seq}`);
+        console.log(`    found ${mine.id}`);
     });
 
     await step('tool-job: img.process convert to WebP', async () => {
