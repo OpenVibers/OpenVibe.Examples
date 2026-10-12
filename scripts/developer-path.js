@@ -212,7 +212,7 @@ async function runDeveloperPath({ network = PRODUCTION_NETWORK, services = PRODU
         const cursorPath = path.join(dir, 'cursor.json');
         const seen = [];
         const s = createSubscriber(subscriberConfig({ ...creds(), OV_EVENTS_MODE: 'pull', OV_CURSOR_PATH: cursorPath }), {
-            fetch: fetchImpl, log: { log: () => {}, error: (m) => say(m) }, onEvent: (event, { seq }) => { seen.push({ seq, id: event.event_id }); },
+            fetch: fetchImpl, log: { log: () => {}, error: (m) => say(m) }, onEvent: (event) => { seen.push({ id: event.event_id }); },
         });
         // Start the subscriber at the head (an opaque cursor), then publish: the pull finds what came after it.
         await s.startAtHead();
@@ -224,7 +224,7 @@ async function runDeveloperPath({ network = PRODUCTION_NETWORK, services = PRODU
         const n = await s.pullOnce();
         const mine = seen.find((e) => e.id === pub.event_id);
         if (!mine) throw new Error(`the published event ${pub.event_id} was not in the pull of ${topics[0]}`);
-        say(`pulled ${topics[0]} with events.app.read: ${n} event(s), found ${mine.id} at seq ${mine.seq}`);
+        say(`pulled ${topics[0]} with events.app.read: ${n} event(s), found ${mine.id}`);
     });
 
     await step('export', async () => {

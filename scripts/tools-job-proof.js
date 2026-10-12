@@ -166,8 +166,8 @@ async function runToolsJobProof({ network = PRODUCTION_NETWORK, toolsUrl, client
             let moved;
             do {
                 page = await st.events.pull({ topic: 'tools.job.*', after, limit: 200 });
-                for (const { seq, event } of page.events || []) {
-                    if (event && event.subject && event.subject.id === st.jobId && EVENT_TYPES.includes(event.event_type)) found.set(event.event_type, seq);
+                for (const { event } of page.events || []) {
+                    if (event && event.subject && event.subject.id === st.jobId && EVENT_TYPES.includes(event.event_type)) found.set(event.event_type, event.event_id);
                 }
                 moved = Boolean(page.next_cursor) && page.next_cursor !== after;
                 if (moved) after = page.next_cursor;
@@ -176,7 +176,7 @@ async function runToolsJobProof({ network = PRODUCTION_NETWORK, toolsUrl, client
             if (Date.now() >= deadline) throw new Error(`not in the Events store after ${eventsWaitMs / 1000} s: ${EVENT_TYPES.filter((t) => !found.has(t)).join(', ')}`);
             await sleep(pollMs);
         }
-        say(EVENT_TYPES.map((t) => `${t} seq ${found.get(t)}`).join(', '));
+        say(EVENT_TYPES.map((t) => `${t} ${found.get(t)}`).join(', '));
     });
 
     const ok = steps.every((s) => s.ok);
