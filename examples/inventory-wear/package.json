@@ -1,0 +1,18 @@
+{
+  "name": "openvibe-example-inventory-wear",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Show what people wear on OpenVibe (hats, chat tags, badges, name effects) next to their names in your own app, from Inventory's public reads.",
+  "license": "MIT",
+  "main": "wear.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env wear.js",
+    "test": "node test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.60.0"
+  }
+}
