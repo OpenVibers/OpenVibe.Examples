@@ -3,7 +3,7 @@
 > Executable public integration examples for the OpenVibe platform: the SDK, scoped credentials
 > and public APIs, nothing else.
 
-**Status:** alpha, 0.3.0 (roadmap Wave 20; the `create-openvibe-app` scaffolder, WS-N task 6). Thirteen examples, each with a smoke test that CI runs on
+**Status:** alpha, 0.3.0 (roadmap Wave 20; the `create-openvibe-app` scaffolder, WS-N task 6). Fourteen examples, each with a smoke test that CI runs on
 Node 22.22.1 against `openvibe-sdk/testing`'s mock platform (no network). `npm run e2e` runs three
 of them (Media, Events pull, a Tools job) against the real platform with your own sandbox app; it
 is not part of CI or `npm test`, and it was not run against production as part of this release.
@@ -36,6 +36,7 @@ Each example is small, runs on its own and proves one thing with a smoke test.
 | [chat-bot](examples/chat-bot) | A bot on Chat's WebSocket protocol that stays in its one configured room and always identifies as a bot | Chat `/ws/chat` protocol (no SDK client: Chat is first-party) |
 | [mod-manifest](examples/mod-manifest) | A `mods.mod-manifest@1` validated against the schema, the capability catalog and compatibility ranges | `openvibe-contracts`, `openvibe-sdk/registry` |
 | [go-live](examples/go-live) | Go live on OpenVibe.Live from code: a Live API token finds or creates a WHIP slot and reads its WHIP URL, FFmpeg 8+ publishes (test pattern, a file or a camera), the session is named once media flows and ended when FFmpeg stops; the stream key is never printed | `openvibe-sdk/live` (`slots`, `streams`, `channels.url`), `/core`, FFmpeg's WHIP muxer |
+| [inventory-wear](examples/inventory-wear) | Show what people wear on OpenVibe (hats, chat tags, badges, name effects) next to names in your own app: the public catalog and who wears what, 100 people per call, with no token; text and escaped HTML | `openvibe-sdk/inventory` (`kinds`, `definitions`, `equipped`) |
 | [space-deploy](examples/space-deploy) | Deploy a static site to OpenVibe.Space from CI with an app token (space.deploy.create, deployer role): the built folder as one deploy, live on main or a preview for a pull request, a refusal that changes nothing, rollback; a ready GitHub Actions workflow | `openvibe-sdk/space` (`deploys.uploadFiles`, `rollback`), `/auth` |
 | [zone-s3](examples/zone-s3) | OpenVibe.Zone's private buckets over S3 with the official AWS SDK v3: put, get, a paged list, a presigned share link (at most 7 days) and delete; path-style, us-east-1, SigV4, an access key scoped to the zone | `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` |
 | [ai-chat](examples/ai-chat) | The official `openai` npm client on `https://ai.openvibe.services/v1` with a Network app token: plain and streamed Chat Completions, `x_openvibe` run info, the project's own provider by secret name | `openai` (`baseURL`, `apiKey` as a token function), `openvibe-sdk/auth` |
@@ -293,7 +294,7 @@ test/public-surface.test.js, test/structure.test.js
 ## Owns
 
 - the nine charter examples: vanilla browser app, Node server app, webhook consumer, event
-  subscriber, Media uploader, Chat bot, tool/job example, mod manifest example, OAuth app example; plus the AI chat example (the openai client on AI's OpenAI-compatible endpoint) the go-live example (Live over WHIP from code), the zone-s3 example (Zone with the AWS SDK v3) and the space-deploy example (Space deploys from CI)
+  subscriber, Media uploader, Chat bot, tool/job example, mod manifest example, OAuth app example; plus the AI chat example (the openai client on AI's OpenAI-compatible endpoint) the go-live example (Live over WHIP from code), the zone-s3 example (Zone with the AWS SDK v3), the space-deploy example (Space deploys from CI) and the inventory-wear example (what people wear, rendered in your app)
 - the on-demand end-to-end run (`npm run e2e`) and the sandbox-app setup script
 - the developer path check (`npm run developer-path`, and `developer-path:mock` in CI)
 
