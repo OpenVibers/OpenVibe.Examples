@@ -9,7 +9,7 @@ of them (Media, Events pull, a Tools job) against the real platform with your ow
 is not part of CI or `npm test`, and it was not run against production as part of this release.
 `npm run developer-path` is the Wave 20 exit check (account to Media and Events to revoked
 credentials); CI runs it against the mock platform, and a person runs it against production.  
-**Built on:** [openvibe-sdk v0.60.0](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.37.2), and
+**Built on:** [openvibe-sdk v0.60.0](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.60.0), and
 openvibe-contracts v0.209.0 for the mod manifest.  
 **Plan:** OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §15.1
 and §18.9; roadmap Wave 20, §30 (public SDK surface), ADR-014 (developer projects).  
@@ -223,8 +223,9 @@ and it refuses to run in CI against production.
 
 ## What still does not work
 
-- **No consent screen.** Network's account chooser names the app but does not list the
-  capabilities it asks for. Apps get no refresh tokens and learn only the person's `usr_…` id.
+- **No refresh tokens, and no profile.** Network's consent screen lists the capabilities an app asks for, and a
+  person who continues gives it a 5-minute app token with no refresh token. The app learns only the person's `usr_…`
+  id (`on_behalf_of`): profile lookups (`identity.subject.resolve`) are `first-party`.
 - **`/oauth/token` is not CORS-open**, like every Network route outside discovery and the
   registry, so a browser app exchanges its code on its own server
   ([browser-app](examples/browser-app) does).
@@ -265,7 +266,7 @@ Repository checks (`test/`):
   value in a `.env.example`.
 - `structure.test.js` checks the nine examples are complete and copyable: README with "What it
   proves" and "Run it against the real platform", a `.env.example` that names every variable the
-  code reads, MIT license, `openvibe-sdk` pinned to one tag (the root package.json's, v0.37.2 now), no `file:` links; and that
+  code reads, MIT license, `openvibe-sdk` pinned to one tag (the root package.json's), no `file:` links; and that
   `npm run e2e` is outside CI and `npm test` and refuses to start without its variables; and that
   CI runs the developer path against the mock platform only.
 - `developer-path.test.js` runs the developer path against the mock platform and checks the
@@ -298,7 +299,7 @@ test/public-surface.test.js, test/structure.test.js
 
 ## Depends on
 
-- OpenVibe.SDK (v0.37.2), OpenVibe.Contracts (v0.113.0, mod manifest only)
+- OpenVibe.SDK (v0.60.0), OpenVibe.Contracts (v0.209.0, mod manifest only)
 - at run time against the real platform: Network (tokens, registry, developer projects), Events,
   Media, Tools, Chat (on openvibe.live)
 

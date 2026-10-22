@@ -5,7 +5,7 @@
   "wave": "W20",
   "version": "0.3.0",
   "sdk": "openvibe-sdk v0.60.0",
-  "contracts": "openvibe-contracts v0.126.0 (mod-manifest example)",
+  "contracts": "openvibe-contracts v0.209.0 (mod-manifest example)",
   "deployed": false,
   "deployment": "none: a repository with CI, not a runtime and not a published package",
   "features": [
@@ -21,12 +21,12 @@
   "e2e": "npm run e2e runs media-uploader, event-subscriber (pull) and tool-job against the real platform with a sandbox app's OV_CLIENT_ID/OV_CLIENT_SECRET/OV_PROJECT_ID; on demand only, not in CI or npm test; not run against production as part of this release",
   "platform": "sandbox developer path (projects, sandbox grants, app tokens for openvibe.media/events/tools, Media project tenant, Events app.<project_key>.* events, Tools jobs, CORS-open discovery) verified in production on 2026-09-23 by the platform's W20 exit check (a curl script against the public endpoints); that check is now committed as npm run developer-path (SDK and examples, plus credential rotation, revocation and archive), which runs in CI against the mock platform and on demand against production (credentials from env only; refuses in CI against production); not yet run against production",
   "not_working": [
-    "no consent screen; no refresh tokens or identity for apps",
+    "no refresh tokens for apps (an app token lasts 5 minutes), and an app learns only the person's usr_ id: profile lookups (identity.subject.resolve) are first-party",
     "/oauth/token is not CORS-open: browser apps exchange codes server-side",
     "chat.message.send is first-party: the chat bot uses a Live hbt_ token",
-    "production apps and allowances need staff",
-    "mod publishing is first-party"
+    "production apps and their allowances need staff (an admin manages a production app)",
+    "mod publishing is first-party (games.mod.manage)"
   ],
   "plan": "OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §15.1, §18.9; roadmap Wave 20, §30, ADR-014",
-  "updated": "2026-10-20"
+  "updated": "2026-10-22"
 }

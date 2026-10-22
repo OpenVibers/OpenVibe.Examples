@@ -68,6 +68,6 @@ Things to know:
 - **The server-side registry read is optional.** With `OV_REGISTRY_PROXY=1` the server also
   answers `/api/registry/services`, and the page falls back to it when the browser cannot reach
   Network. It is off by default because the registry is readable from the browser.
-- **No consent screen** yet (Network's account chooser does not list the capabilities), and an app
-  learns only the person's `usr_…` id: there is no identity-only sign-in for apps, and profile
+- **The app learns only the person's `usr_…` id.** Network's consent screen lists the capabilities
+  the app asks for (a request for none only tells the app which account signed in), and profile
   lookups are `first-party`.
