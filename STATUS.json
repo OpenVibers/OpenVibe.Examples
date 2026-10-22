@@ -9,7 +9,7 @@
   "deployed": false,
   "deployment": "none: a repository with CI, not a runtime and not a published package",
   "features": [
-    "nine copyable examples: browser app, Node server app, Media uploader, event subscriber, webhook consumer, tool job, OAuth app, chat bot, mod manifest",
+    "ten copyable examples: browser app, Node server app, Media uploader, event subscriber, webhook consumer, tool job, OAuth app, chat bot, mod manifest, AI chat (the official openai client on ai.openvibe.services/v1, plain, streamed and the project's own provider)",
     "smoke tests against openvibe-sdk/testing's mock platform, offline",
     "create-openvibe-app scaffolder",
     "npm run e2e against the real platform (on demand)",
