@@ -1,0 +1,19 @@
+{
+  "name": "openvibe-example-zone-s3",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenVibe.Zone over S3 with the official AWS SDK v3: put, get, list, a presigned share link and delete in a private zone.",
+  "license": "MIT",
+  "main": "zone.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env zone.js",
+    "test": "node test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1148.0",
+    "@aws-sdk/s3-request-presigner": "3.1148.0"
+  }
+}
