@@ -35,6 +35,7 @@ Each example is small, runs on its own and proves one thing with a smoke test.
 | [oauth-app](examples/oauth-app) | Authorization code + PKCE for a confidential app, exchange on the server, offline app-token verification, session hygiene | `openvibe-sdk/auth` |
 | [chat-bot](examples/chat-bot) | A bot on Chat's WebSocket protocol that stays in its one configured room and always identifies as a bot | Chat `/ws/chat` protocol (no SDK client: Chat is first-party) |
 | [mod-manifest](examples/mod-manifest) | A `mods.mod-manifest@1` validated against the schema, the capability catalog and compatibility ranges | `openvibe-contracts`, `openvibe-sdk/registry` |
+| [ai-chat](examples/ai-chat) | The official `openai` npm client on `https://ai.openvibe.services/v1` with a Network app token: plain and streamed Chat Completions, `x_openvibe` run info, the project's own provider by secret name | `openai` (`baseURL`, `apiKey` as a token function), `openvibe-sdk/auth` |
 
 Each example folder has a README, a `.env.example`, its own `package.json` and a
 `test/smoke.test.js`. Configuration is environment variables only (`OV_CLIENT_ID`,
@@ -122,6 +123,7 @@ at the root one: `node --env-file=../../.env upload.js ./logo.png`.
 | [browser-app](examples/browser-app) | public, redirect `http://localhost:3001/callback` | `media.object.read` | `OV_CLIENT_ID`, `OV_AUDIENCE`, `OV_SCOPE` |
 | [chat-bot](examples/chat-bot) | none: a Live API token (`hbt_…`) of a dedicated bot account | Live token scope `chat` | `OV_CHAT_TOKEN`, one of `OV_CHAT_CHANNEL_USER_ID` / `OV_CHAT_STREAM_ID` |
 | [mod-manifest](examples/mod-manifest) | none | none | `OV_NETWORK_URL` for `--registry` |
+| [ai-chat](examples/ai-chat) | confidential | `ai.app.run` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, optional `OV_AI_URL`; own provider: `OV_PROVIDER_SECRET` (a secret's name), `OV_PROVIDER_BASE_URL`, `OV_PROVIDER_MODEL` |
 
 Rotate a secret in the portal or with `projects.credentials.rotate()`, revoke the app with
 `projects.apps.revoke()`. Issued tokens end within their 5-minute lifetime.
@@ -264,7 +266,7 @@ Repository checks (`test/`):
 - `public-surface.test.js` fails on the loopback shared-key header, on the platform's internal
   route prefix, on hard-coded loopback service ports outside the local mocks, and on any secret
   value in a `.env.example`.
-- `structure.test.js` checks the nine examples are complete and copyable: README with "What it
+- `structure.test.js` checks the ten examples are complete and copyable: README with "What it
   proves" and "Run it against the real platform", a `.env.example` that names every variable the
   code reads, MIT license, `openvibe-sdk` pinned to one tag (the root package.json's), no `file:` links; and that
   `npm run e2e` is outside CI and `npm test` and refuses to start without its variables; and that
@@ -288,7 +290,7 @@ test/public-surface.test.js, test/structure.test.js
 ## Owns
 
 - the nine charter examples: vanilla browser app, Node server app, webhook consumer, event
-  subscriber, Media uploader, Chat bot, tool/job example, mod manifest example, OAuth app example
+  subscriber, Media uploader, Chat bot, tool/job example, mod manifest example, OAuth app example; plus the AI chat example (the openai client on AI's OpenAI-compatible endpoint)
 - the on-demand end-to-end run (`npm run e2e`) and the sandbox-app setup script
 - the developer path check (`npm run developer-path`, and `developer-path:mock` in CI)
 

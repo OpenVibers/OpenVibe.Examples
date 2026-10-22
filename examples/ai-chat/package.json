@@ -1,0 +1,19 @@
+{
+  "name": "openvibe-example-ai-chat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI chat: the official openai client pointed at ai.openvibe.services/v1, plain, streamed and on the project's own provider.",
+  "license": "MIT",
+  "main": "chat.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env chat.js",
+    "test": "node test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "openai": "7.42.0",
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.60.0"
+  }
+}
