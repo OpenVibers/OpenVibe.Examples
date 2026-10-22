@@ -1,0 +1,31 @@
+# Copy to .github/workflows/deploy-to-space.yml in your site's repository, with deploy.js and a package.json that
+# depends on openvibe-sdk. Repository settings → Secrets and variables → Actions: OV_CLIENT_ID and OV_CLIENT_SECRET
+# (secrets), OV_SPACE_SITE (a variable). Every push to main goes live; every pull request gets a preview.
+name: Deploy to OpenVibe.Space
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: space-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build            # your build; it writes the site to dist/
+      - name: Deploy
+        env:
+          OV_CLIENT_ID: ${{ secrets.OV_CLIENT_ID }}
+          OV_CLIENT_SECRET: ${{ secrets.OV_CLIENT_SECRET }}
+          OV_SPACE_SITE: ${{ vars.OV_SPACE_SITE }}
+          OV_DIR: dist
+          OV_PREVIEW: ${{ github.event_name == 'pull_request' && '1' || '' }}
+        run: node deploy.js

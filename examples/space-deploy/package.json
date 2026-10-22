@@ -1,0 +1,18 @@
+{
+  "name": "openvibe-example-space-deploy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deploy a static site to OpenVibe.Space from CI with an app token: live on main, a preview for pull requests, rollback.",
+  "license": "MIT",
+  "main": "deploy.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env deploy.js",
+    "test": "node test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.60.0"
+  }
+}
