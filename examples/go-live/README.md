@@ -42,7 +42,7 @@ OV_SOURCE=talk.mp4 OV_SECONDS=0 node --env-file=.env go-live.js     # a file, un
 
 | File | What |
 |---|---|
-| `go-live.js` | `loadConfig()`, `createLive()`, `ensureSlot()`, `whipUrl()`, `ffmpegArgs()`, `waitForSession()`, `goLive()`, CLI |
+| `go-live.js` | `loadConfig()`, `createLive()`, `ensureSlot()`, `whipUrl()` (the SDK's `live.whip.forSlot`), `ffmpegArgs()`, `waitForSession()`, `goLive()`, CLI |
 | `test/smoke.test.js` | the whole run against a stand-in for Live's routes and a fake FFmpeg |
 
 ## Run the smoke test

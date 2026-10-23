@@ -35,6 +35,9 @@ async function fakeFetch(url, init = {}) {
     if (method === 'GET' && u.pathname === '/api/streams/managed/41/profile') {
         return json(200, { managed_stream: { id: 41, title: 'Robot cam' }, stream_key: KEY, whip_url_base: 'https://whip.openvibe.live', rtmp_url: 'rtmp://openvibe.live:1935/live' });
     }
+    if (method === 'GET' && u.pathname === '/api/streams/managed/43/profile') {
+        return json(200, { managed_stream: { id: 43 }, stream_key: null, whip_url: 'https://ingest.openre.stream/whip/orw_example', ingest_authority: 'openre' });
+    }
     if (method === 'GET' && u.pathname === '/api/streams/managed/42/profile') {
         return json(200, { managed_stream: { id: 42 }, stream_key: null, whip_url_base: null, ingest_authority: 'openre' });
     }
@@ -80,8 +83,9 @@ function fakeFfmpeg(record) {
 
     const sdk = createLive(config, { fetch: fakeFetch });
 
-    // A slot from another ingest has no Live WHIP URL: said plainly.
-    await assert.rejects(whipUrl(sdk, 42), /slot 42 has no Live WHIP URL \(its ingest is openre\)/);
+    // A slot OpenRestream ingests publishes to OpenRestream's WHIP URL; one with no WHIP address at all says so plainly.
+    assert.equal(await whipUrl(sdk, 43), 'https://ingest.openre.stream/whip/orw_example');
+    await assert.rejects(whipUrl(sdk, 42), /^Error: slot 42: this slot has no WHIP address/);
 
     // The whole run: a new WHIP slot, its WHIP URL, FFmpeg, the session named, the stream ended.
     const runs = [];

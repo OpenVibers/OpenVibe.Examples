@@ -62,14 +62,17 @@ async function ensureSlot({ live }, config) {
     return { slot, created: true };
 }
 
-/** The slot's WHIP URL (docs: https://openvibe.live/docs/whip#getting-your-whip-url). */
-async function whipUrl({ client }, slotId) {
-    const profile = await client.json({ service: 'live', audience: 'openvibe.live', path: `/api/streams/managed/${Number(slotId)}/profile` });
-    if (!profile.stream_key || !profile.whip_url_base) {
-        // A slot OpenRestream ingests publishes there, not to Live's WHIP.
-        throw new Error(`slot ${slotId} has no Live WHIP URL${profile.ingest_authority ? ` (its ingest is ${profile.ingest_authority})` : ''}`);
+/**
+ * The slot's WHIP URL (docs: https://openvibe.live/docs/whip#getting-your-whip-url), from the SDK's live.whip.forSlot:
+ * Live's WHIP origin with the slot's key, or OpenRestream's own WHIP URL when OpenRestream ingests the slot.
+ */
+async function whipUrl({ live }, slotId) {
+    try {
+        return (await live.whip.forSlot(slotId)).url;
+    } catch (err) {
+        if (err instanceof TypeError) throw new Error(`slot ${slotId}: ${err.message.replace(/^live\.whip\.forSlot: /, '')}`);
+        throw err;
     }
-    return `${String(profile.whip_url_base).replace(/\/+$/, '')}/whip/${profile.stream_key}`;
 }
 
 /**
