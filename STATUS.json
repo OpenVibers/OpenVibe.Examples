@@ -13,7 +13,7 @@
     "smoke tests against openvibe-sdk/testing's mock platform, offline",
     "create-openvibe-app scaffolder",
     "npm run e2e against the real platform (on demand)",
-    "developer path check (mock in CI, real on demand)",
+    "developer path check: account → project → app → Media, Events and AI → release → rotated and revoked credentials (mock in CI, production daily from OpenVibe.Host)",
     "tools-job-proof: the scheduled Tools job proof (submit, stream resume with Last-Event-ID, Media result, Events trail)",
     "public-surface check: no loopback keys, internal routes or secret values"
   ],
