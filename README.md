@@ -7,9 +7,9 @@
 Node 22.22.1 against `openvibe-sdk/testing`'s mock platform (no network). `npm run e2e` runs three
 of them (Media, Events pull, a Tools job) against the real platform with your own sandbox app; it
 is not part of CI or `npm test`, and it was not run against production as part of this release.
-`npm run developer-path` is the Wave 20 exit check (account to Media and Events to revoked
-credentials); CI runs it against the mock platform, and a person runs it against production.  
-**Built on:** [openvibe-sdk v0.62.0](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.60.0), and
+`npm run developer-path` is the Wave 20 exit check (account to Media, Events and AI to revoked
+credentials); CI runs it against the mock platform, and OpenVibe.Host runs it against production daily.  
+**Built on:** [openvibe-sdk v0.62.0](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.62.0), and
 openvibe-contracts v0.209.0 for the mod manifest.  
 **Plan:** OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §15.1
 and §18.9; roadmap Wave 20, §30 (public SDK surface), ADR-014 (developer projects).  
@@ -157,8 +157,9 @@ Verified in production on 2026-09-23 with a brand-new account, using the public 
 ## Developer path check
 
 `scripts/developer-path.js` is the roadmap Wave 20 exit check as a repeatable script: a developer
-goes from an account to a working Media and Events integration with public endpoints, the SDK and
-scoped credentials only, then rotates and revokes those credentials and cleans up.
+goes from an account to a working Media, Events and AI integration with public endpoints, the SDK and
+scoped credentials only, then rotates and revokes those credentials and cleans up. OpenVibe.Host runs it
+against production every day (`openvibe-devpath.timer`, shown on openvibe.network/status).
 
 | Step | What it does |
 |---|---|
@@ -166,19 +167,22 @@ scoped credentials only, then rotates and revokes those credentials and cleans u
 | 2. discovery | reads `/.well-known/openvibe` as any origin may |
 | 3. project | creates a sandbox project with `openvibe-sdk/projects` |
 | 4. app | creates a confidential sandbox app; its secret stays in memory |
-| 5. grants | requests `media.object.upload`, `media.object.read`, `events.app.publish`, `events.app.read`, `services.release.manage`; all must be approved at once |
+| 5. grants | requests `media.object.upload`, `media.object.read`, `events.app.publish`, `events.app.read`, `ai.app.run`, `services.release.manage`; all must be approved at once |
 | 6. media | [media-uploader](examples/media-uploader): upload a small file, read it back, delete it |
 | 7. events | [event-subscriber](examples/event-subscriber): publish `app.<project_key>.developer_path.ran`, pull it with a cursor |
-| 8. export | as the project's owner: Network mints 5-minute read-only export tokens; Media lists the project's sandbox files with one and refuses an upload; Events returns the event from step 7 with the other |
-| 9. release | as the app, on OpenVibe.Services (`OV_SERVICES_URL`): a sandbox release of itself goes draft → published → deprecated → revoked, checked in the public list each time |
-| 10. credentials | rotates with no overlap and revokes the first credential; the old secret must be refused at `/oauth/token`, the new one must work |
-| 11. cleanup | archives the project, even when an earlier step failed; the app's secret must then be refused |
+| 8. ai | [ai-chat](examples/ai-chat): the official `openai` client on OpenVibe.AI's OpenAI-compatible endpoint (`OV_AI_URL`) with an app token for `openvibe.ai`; one short answer, which must carry its `x_openvibe` run id |
+| 9. export | as the project's owner: Network mints 5-minute read-only export tokens; Media lists the project's sandbox files with one and refuses an upload; Events returns the event from step 7 with the other |
+| 10. release | as the app, on OpenVibe.Services (`OV_SERVICES_URL`): a sandbox release of itself goes draft → published → deprecated → revoked, checked in the public list each time |
+| 11. credentials | rotates with no overlap and revokes the first credential; the old secret must be refused at `/oauth/token`, the new one must work |
+| 12. cleanup | archives the project, even when an earlier step failed; the app's secret must then be refused |
 
 **In CI**, on every push, `npm run developer-path:mock` runs the same code against
 `openvibe-sdk/testing`'s mock platform (the `developer-path` job; `test/developer-path.test.js`
 also checks it leaves nothing behind, never prints a secret, and still cleans up after a failure).
 The mock has no account API, so `scripts/developer-path-mock.js` adds register and login routes
-that mint mock user tokens, mints export tokens, and stands in for Services' release API; every other step is the platform mock's own.
+that mint mock user tokens, mints export tokens, and stands in for Services' release API and AI's
+`/v1/chat/completions`; it hands the mock the contract's public capabilities, as Network reads them. Every
+other step is the platform mock's own.
 
 **Against production** it runs only when a person starts it. Credentials come from the
 environment (or `./.env`) only:
@@ -194,7 +198,7 @@ It refuses to start without credentials, and refuses in CI against the productio
 set and `OV_NETWORK_URL` unset or `https://openvibe.network`), so it can later run in CI against
 an integration environment but never against production by accident. It masks every password,
 secret and token in its output and prints signed URLs without their signature. Exit `0` when all
-eleven steps passed, `1` when one failed, `2` when it refused to start.
+twelve steps passed, `1` when one failed, `2` when it refused to start.
 
 It does not yet cover webhook delivery to an external endpoint (that needs a public https host)
 or publishing an app release in OpenVibe.Services.
@@ -315,7 +319,7 @@ Examples implements no capability (its manifest lists none). The examples call t
 developer app with the grants a sandbox project asks for (`npm run new-app`): `media.object.upload`
 and `media.object.read` (Media), `events.app.publish`, `events.app.read` and `events.app.subscribe`
 (Events), and `tools.job.create`, `tools.job.read` and `tools.job.cancel` (Tools); a public browser app
-gets `media.object.read` only. The developer path check also uses `services.release.manage` (Services). The
+gets `media.object.read` only. The developer path check also uses `ai.app.run` (AI) and `services.release.manage` (Services). The
 chat bot uses a Live `hbt_` token with scope `chat`, because `chat.message.send` is first-party.
 
 ## Acceptance

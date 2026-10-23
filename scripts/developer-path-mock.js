@@ -13,14 +13,21 @@
  * platform like any app token) and stands in for OpenVibe.Services' release API (the release step):
  * an app token for openvibe.services carrying services.release.manage manages the app's own releases,
  * draft → published → deprecated → revoked, and the public list shows every release but drafts, like Services.
+ * And it stands in for OpenVibe.AI's OpenAI-compatible endpoint (the ai step): an app token for openvibe.ai carrying
+ * ai.app.run gets a chat.completion with x_openvibe, in OpenAI's shapes, errors included.
  * Everything else is the platform mock's own.
  */
 const { createMockPlatform } = require('openvibe-sdk/testing');
-const { runDeveloperPath, PRODUCTION_NETWORK, PRODUCTION_SERVICES } = require('./developer-path');
+const contracts = require('openvibe-contracts');
+const { runDeveloperPath, PRODUCTION_NETWORK, PRODUCTION_SERVICES, PRODUCTION_AI } = require('./developer-path');
 
 function withAccounts(platform, network = PRODUCTION_NETWORK) {
     const byName = new Map();
     const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+    // A token's claims (its signature is the platform's; here the claims decide), or null.
+    const claimsOf = (authorization) => {
+        try { return JSON.parse(Buffer.from(String(authorization || '').replace(/^Bearer /, '').split('.')[1], 'base64url').toString('utf8')); } catch { return null; }
+    };
     // OpenVibe.Services' release API, in memory (the token's signature is the platform's; here its claims decide).
     const releases = new Map();
     let n = 0;
@@ -29,8 +36,7 @@ function withAccounts(platform, network = PRODUCTION_NETWORK) {
         if (!m) return reply(404, { code: 'route.not_found' });
         const list = (appId) => [...releases.values()].filter((r) => r.app_id === appId && r.status !== 'draft');
         if (m[1] && method === 'GET') return reply(200, { app_id: m[1], releases: list(m[1]) });
-        let claims = null;
-        try { claims = JSON.parse(Buffer.from(String((init.headers || {}).Authorization || '').replace(/^Bearer /, '').split('.')[1], 'base64url').toString('utf8')); } catch { claims = null; }
+        const claims = claimsOf((init.headers || {}).Authorization);
         if (!claims) return reply(401, { code: 'auth.required' });
         if (!(claims.aud || []).includes('openvibe.services') || !(claims.cap || []).includes('services.release.manage')) return reply(403, { code: 'capability.denied' });
         const body = JSON.parse(init.body || '{}');
@@ -46,6 +52,25 @@ function withAccounts(platform, network = PRODUCTION_NETWORK) {
         if (next[0] && rel.status !== next[0]) return reply(409, { code: 'release.invalid_state' });
         rel.status = next[1];
         return reply(200, { release: rel });
+    }
+
+    // OpenVibe.AI's /v1/chat/completions (server/api/openai.js), in OpenAI's shapes.
+    let runs = 0;
+    async function ai(url, method, init) {
+        const fail = (status, code, message) => reply(status, { error: { message, type: 'invalid_request_error', code } });
+        if (url.pathname !== '/v1/chat/completions' || method !== 'POST') return fail(404, 'route.not_found', 'no such route');
+        const headers = new Headers(init.headers || {});
+        const claims = claimsOf(headers.get('authorization'));
+        if (!claims) return fail(401, 'token.missing', 'an app token for openvibe.ai is required');
+        if (!(claims.aud || []).includes('openvibe.ai') || !(claims.cap || []).includes('ai.app.run')) return fail(403, 'capability.denied', 'ai.app.run is required');
+        const body = JSON.parse(typeof init.body === 'string' ? init.body : await new Response(init.body).text());
+        if (!Array.isArray(body.messages) || !body.messages.length) return fail(400, 'request.invalid', 'messages is required');
+        return reply(200, {
+            id: `chatcmpl-mock${++runs}`, object: 'chat.completion', created: Math.floor(Date.now() / 1000), model: 'mock-local',
+            choices: [{ index: 0, message: { role: 'assistant', content: 'Ready.' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 6, completion_tokens: 2, total_tokens: 8 },
+            x_openvibe: { run_id: `run_mock${runs}`, provider: 'local', fallback_used: false, cost_usd: 0 },
+        });
     }
 
     return async (input, init = {}) => {
@@ -74,13 +99,18 @@ function withAccounts(platform, network = PRODUCTION_NETWORK) {
             return reply(201, { access_token: token, token_type: 'Bearer', expires_in: 300, scope: caps.join(' ') });
         }
         if (url.origin === PRODUCTION_SERVICES) return services(url, method, init);
+        if (url.origin === PRODUCTION_AI) return ai(url, method, init);
         return platform.fetch(input, init);
     };
 }
 
+// The capabilities apps may ask for, as Network reads them: the contract's public, active ones (the mock's own
+// default list predates ai.app.run).
+const APP_CAPABILITIES = contracts.capabilities.manifests.filter((c) => c.visibility === 'public' && (c.status || 'active') === 'active');
+
 /** → { result, platform, output }. platformOptions go to createMockPlatform (tests use them to break a step). */
 async function runAgainstMock({ log, platformOptions = {} } = {}) {
-    const platform = createMockPlatform(platformOptions);
+    const platform = createMockPlatform({ capabilities: APP_CAPABILITIES, ...platformOptions });
     const lines = [];
     const result = await runDeveloperPath({
         network: PRODUCTION_NETWORK,

@@ -2,27 +2,29 @@
 'use strict';
 /**
  * npm run developer-path: the roadmap Wave 20 exit check, repeatable. A developer goes from an
- * account to a working Media and Events integration with public endpoints, the SDK and scoped
+ * account to a working Media, Events and AI integration with public endpoints, the SDK and scoped
  * credentials only, then rotates and revokes those credentials and archives the project:
  *
  *   1. account     register (--register) or sign in at <network>/api/auth/*, or OV_USER_TOKEN
  *   2. discovery   GET /.well-known/openvibe, as any origin may
  *   3. project     a new project (sandbox) through /api/v1/projects (openvibe-sdk/projects)
  *   4. app         a confidential sandbox app; its secret is held in memory only
- *   5. grants      media.object.upload|read, events.app.publish|read and services.release.manage,
- *                  approved at once for the project owner inside the sandbox allowance
+ *   5. grants      media.object.upload|read, events.app.publish|read, ai.app.run and
+ *                  services.release.manage, approved at once for the project owner inside the sandbox allowance
  *   6. media       examples/media-uploader: upload a small file, read it back, delete it
  *   7. events      examples/event-subscriber: publish app.<project_key>.developer_path.ran, pull it
- *   8. export      as the project's owner: Network mints read-only export tokens (5 minutes); Media
+ *   8. ai          examples/ai-chat: the official openai client on OpenVibe.AI's OpenAI-compatible endpoint
+ *                  with an app token for openvibe.ai; one short answer, with its x_openvibe run id
+ *   9. export      as the project's owner: Network mints read-only export tokens (5 minutes); Media
  *                  lists the project's sandbox files with one and refuses an upload; Events returns the
  *                  event from step 7 with the other (roadmap WS-N task 9, the project export)
- *   9. release     as the app, on OpenVibe.Services: a sandbox release of itself goes draft →
+ *  10. release     as the app, on OpenVibe.Services: a sandbox release of itself goes draft →
  *                  published → deprecated → revoked, checked in the public list at each step (a
  *                  draft is never listed; a revoked release stays listed, marked revoked)
  *                  (roadmap WS-N task 5, the app release flow in production)
- *  10. credentials rotate with no overlap, revoke the first credential; the old secret is refused
+ *  11. credentials rotate with no overlap, revoke the first credential; the old secret is refused
  *                  at /oauth/token and the new one works
- *  11. cleanup     archive the project (always attempted once it exists); the app's secret is
+ *  12. cleanup     archive the project (always attempted once it exists); the app's secret is
  *                  refused afterwards
  *
  * The same flow runs in CI against openvibe-sdk/testing's mock platform (scripts/developer-path-mock.js,
@@ -35,7 +37,7 @@
  *
  * Credentials come from the environment only (or ./.env). It refuses to start without them, and
  * refuses to run in CI against the production Network (CI set and OV_NETWORK_URL unset or
- * openvibe.network). Optional: OV_NETWORK_URL, OV_SERVICES_URL. It never prints a password, secret or token: they
+ * openvibe.network). Optional: OV_NETWORK_URL, OV_SERVICES_URL, OV_AI_URL. It never prints a password, secret or token: they
  * are masked in all output, and signed URLs are shown without their signature. Exit 0 when every
  * step passed, 1 when one failed, 2 when it refused to start.
  */
@@ -50,13 +52,15 @@ const ROOT = path.join(__dirname, '..');
 const { createUploader, explain, loadConfig: mediaConfig } = require(path.join(ROOT, 'examples/media-uploader/upload'));
 const { publishAppEvent, loadConfig: publishConfig } = require(path.join(ROOT, 'examples/event-subscriber/publish'));
 const { createSubscriber, createCursorStore, loadConfig: subscriberConfig } = require(path.join(ROOT, 'examples/event-subscriber/subscriber'));
+const { createAiClient, ask, loadConfig: aiConfig } = require(path.join(ROOT, 'examples/ai-chat/chat'));
 
 const PRODUCTION_NETWORK = 'https://openvibe.network';
 const PRODUCTION_SERVICES = 'https://openvibe.services';
 const PRODUCTION_MEDIA = 'https://openvibe.media';
 const PRODUCTION_EVENTS = 'https://openvibe.events';
-const GRANTS = ['media.object.upload', 'media.object.read', 'events.app.publish', 'events.app.read', 'services.release.manage'];
-const STEPS = ['account', 'discovery', 'project', 'app', 'grants', 'media', 'events', 'export', 'release', 'credentials', 'cleanup'];
+const PRODUCTION_AI = 'https://ai.openvibe.services';
+const GRANTS = ['media.object.upload', 'media.object.read', 'events.app.publish', 'events.app.read', 'ai.app.run', 'services.release.manage'];
+const STEPS = ['account', 'discovery', 'project', 'app', 'grants', 'media', 'events', 'ai', 'export', 'release', 'credentials', 'cleanup'];
 const STEP_TIMEOUT_MS = 120000;
 
 const withoutQuery = (u) => { try { const x = new URL(u); return `${x.origin}${x.pathname}${x.search ? ' (signed)' : ''}`; } catch { return u; } };
@@ -98,11 +102,11 @@ async function tryToken(fetchImpl, network, clientId, clientSecret, audience) {
 }
 
 /**
- * Runs the eleven steps. account: { token } | { username, password, register }. onSecret(value) is
+ * Runs the twelve steps. account: { token } | { username, password, register }. onSecret(value) is
  * called with every password, secret and token as soon as it is known, so the caller can mask it.
  * → { ok, steps: [{ name, ok, skipped?, error? }], projectId, appId }
  */
-async function runDeveloperPath({ network = PRODUCTION_NETWORK, services = PRODUCTION_SERVICES, media = PRODUCTION_MEDIA, events = PRODUCTION_EVENTS, fetch: fetchImpl = globalThis.fetch, account, log = (m) => console.log(m), onSecret = () => {}, now = () => new Date() }) {
+async function runDeveloperPath({ network = PRODUCTION_NETWORK, services = PRODUCTION_SERVICES, media = PRODUCTION_MEDIA, events = PRODUCTION_EVENTS, ai = PRODUCTION_AI, fetch: fetchImpl = globalThis.fetch, account, log = (m) => console.log(m), onSecret = () => {}, now = () => new Date() }) {
     network = network.replace(/\/+$/, '');
     services = services.replace(/\/+$/, '');
     const say = (m) => log(`    ${m}`);
@@ -225,6 +229,17 @@ async function runDeveloperPath({ network = PRODUCTION_NETWORK, services = PRODU
         const mine = seen.find((e) => e.id === pub.event_id);
         if (!mine) throw new Error(`the published event ${pub.event_id} was not in the pull of ${topics[0]}`);
         say(`pulled ${topics[0]} with events.app.read: ${n} event(s), found ${mine.id}`);
+    });
+
+    await step('ai', async () => {
+        // Production app runs go to free and local capacity (a small local model), so the prompt asks for little.
+        const config = aiConfig({ ...creds(), OV_AI_URL: `${ai.replace(/\/+$/, '')}/v1` });
+        const out = await ask(createAiClient(config, { fetch: fetchImpl }), config, 'Reply with one word: ready');
+        const text = String(out.text || '').trim();
+        if (!text) throw new Error('the answer was empty');
+        const run = out.openvibe || {};
+        if (!run.run_id) throw new Error('the answer carries no x_openvibe.run_id');
+        say(`chat.completions.create with the openai client and ai.app.run: ${JSON.stringify(text.slice(0, 40))} from ${out.model} (run ${run.run_id} on ${run.provider}, $${run.cost_usd})`);
     });
 
     await step('export', async () => {
@@ -360,7 +375,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
     console.log(`OpenVibe developer path against ${network}\n`);
     const started = Date.now();
     const services = (env.OV_SERVICES_URL || PRODUCTION_SERVICES).replace(/\/+$/, '');
-    const result = await runDeveloperPath({ network, services, media: env.OV_MEDIA_URL || PRODUCTION_MEDIA, events: env.OV_EVENTS_URL || PRODUCTION_EVENTS, account, onSecret });
+    const result = await runDeveloperPath({ network, services, media: env.OV_MEDIA_URL || PRODUCTION_MEDIA, events: env.OV_EVENTS_URL || PRODUCTION_EVENTS, ai: env.OV_AI_URL || PRODUCTION_AI, account, onSecret });
     // --result <file>: a JSON record for the scheduled production run (OpenVibe.Host openvibe-devpath.timer,
     // shown on openvibe.network/status): step names and outcomes only — never an error text, URL, id or secret.
     const out = argv.indexOf('--result');
@@ -379,7 +394,7 @@ function writeResult(file, result, { network, started = Date.now(), now = Date.n
     return record;
 }
 
-module.exports = { runDeveloperPath, writeResult, GRANTS, STEPS, PRODUCTION_NETWORK, PRODUCTION_SERVICES };
+module.exports = { runDeveloperPath, writeResult, GRANTS, STEPS, PRODUCTION_NETWORK, PRODUCTION_SERVICES, PRODUCTION_AI };
 
 if (require.main === module) {
     main().then((code) => { process.exitCode = code; }, (err) => { console.error(`developer-path: ${describeError(err)}`); process.exitCode = 1; });
