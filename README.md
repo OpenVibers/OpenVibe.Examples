@@ -3,7 +3,7 @@
 > Executable public integration examples for the OpenVibe platform: the SDK, scoped credentials
 > and public APIs, nothing else.
 
-**Status:** alpha, 0.3.0 (roadmap Wave 20; the `create-openvibe-app` scaffolder, WS-N task 6). Fourteen examples, each with a smoke test that CI runs on
+**Status:** alpha, 0.3.0 (roadmap Wave 20; the `create-openvibe-app` scaffolder, WS-N task 6). Fifteen examples, each with a smoke test that CI runs on
 Node 22.22.1 against `openvibe-sdk/testing`'s mock platform (no network). `npm run e2e` runs three
 of them (Media, Events pull, a Tools job) against the real platform with your own sandbox app; it
 is not part of CI or `npm test`, and it was not run against production as part of this release.
@@ -36,6 +36,7 @@ Each example is small, runs on its own and proves one thing with a smoke test.
 | [chat-bot](examples/chat-bot) | A bot on Chat's WebSocket protocol that stays in its one configured room and always identifies as a bot | Chat `/ws/chat` protocol (no SDK client: Chat is first-party) |
 | [mod-manifest](examples/mod-manifest) | A `mods.mod-manifest@1` validated against the schema, the capability catalog and compatibility ranges | `openvibe-contracts`, `openvibe-sdk/registry` |
 | [go-live](examples/go-live) | Go live on OpenVibe.Live from code: a Live API token finds or creates a WHIP slot and reads its WHIP URL, FFmpeg 8+ publishes (test pattern, a file or a camera), the session is named once media flows and ended when FFmpeg stops; the stream key is never printed | `openvibe-sdk/live` (`slots`, `streams`, `channels.url`), `/core`, FFmpeg's WHIP muxer |
+| [game-scores](examples/game-scores) | Achievements and a leaderboard for your game on OpenVibe.Play, from a sandbox app any developer can make today: register a `sandbox-` title, post a round (counted once on a retry), unlock, read the public board, delete the title | `openvibe-sdk/play` (`titles`, `scores`, `achievements`, `boards`) |
 | [inventory-wear](examples/inventory-wear) | Show what people wear on OpenVibe (hats, chat tags, badges, name effects) next to names in your own app: the public catalog and who wears what, 100 people per call, with no token; text and escaped HTML | `openvibe-sdk/inventory` (`kinds`, `definitions`, `equipped`) |
 | [space-deploy](examples/space-deploy) | Deploy a static site to OpenVibe.Space from CI with an app token (space.deploy.create, deployer role): the built folder as one deploy, live on main or a preview for a pull request, a refusal that changes nothing, rollback; a ready GitHub Actions workflow | `openvibe-sdk/space` (`deploys.uploadFiles`, `rollback`), `/auth` |
 | [zone-s3](examples/zone-s3) | OpenVibe.Zone's private buckets over S3 with the official AWS SDK v3: put, get, a paged list, a presigned share link (at most 7 days) and delete; path-style, us-east-1, SigV4, an access key scoped to the zone | `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` |
@@ -167,21 +168,22 @@ against production every day (`openvibe-devpath.timer`, shown on openvibe.networ
 | 2. discovery | reads `/.well-known/openvibe` as any origin may |
 | 3. project | creates a sandbox project with `openvibe-sdk/projects` |
 | 4. app | creates a confidential sandbox app; its secret stays in memory |
-| 5. grants | requests `media.object.upload`, `media.object.read`, `events.app.publish`, `events.app.read`, `ai.app.run`, `services.release.manage`; all must be approved at once |
+| 5. grants | requests `media.object.upload`, `media.object.read`, `events.app.publish`, `events.app.read`, `ai.app.run`, `play.title.manage`, `play.result.write`, `services.release.manage`; all must be approved at once |
 | 6. media | [media-uploader](examples/media-uploader): upload a small file, read it back, delete it |
 | 7. events | [event-subscriber](examples/event-subscriber): publish `app.<project_key>.developer_path.ran`, pull it with a cursor |
 | 8. ai | [ai-chat](examples/ai-chat): the official `openai` client on OpenVibe.AI's OpenAI-compatible endpoint (`OV_AI_URL`) with an app token for `openvibe.ai`; one short answer, which must carry its `x_openvibe` run id |
-| 9. export | as the project's owner: Network mints 5-minute read-only export tokens; Media lists the project's sandbox files with one and refuses an upload; Events returns the event from step 7 with the other |
-| 10. release | as the app, on OpenVibe.Services (`OV_SERVICES_URL`): a sandbox release of itself goes draft → published → deprecated → revoked, checked in the public list each time |
-| 11. credentials | rotates with no overlap and revokes the first credential; the old secret must be refused at `/oauth/token`, the new one must work |
-| 12. cleanup | archives the project, even when an earlier step failed; the app's secret must then be refused |
+| 9. play | [game-scores](examples/game-scores): a `sandbox-` title on OpenVibe.Play (`OV_PLAY_URL`), a round posted twice and recorded once, an unlock, the public board read without a token, the title deleted |
+| 10. export | as the project's owner: Network mints 5-minute read-only export tokens; Media lists the project's sandbox files with one and refuses an upload; Events returns the event from step 7 with the other |
+| 11. release | as the app, on OpenVibe.Services (`OV_SERVICES_URL`): a sandbox release of itself goes draft → published → deprecated → revoked, checked in the public list each time |
+| 12. credentials | rotates with no overlap and revokes the first credential; the old secret must be refused at `/oauth/token`, the new one must work |
+| 13. cleanup | archives the project, even when an earlier step failed; the app's secret must then be refused |
 
 **In CI**, on every push, `npm run developer-path:mock` runs the same code against
 `openvibe-sdk/testing`'s mock platform (the `developer-path` job; `test/developer-path.test.js`
 also checks it leaves nothing behind, never prints a secret, and still cleans up after a failure).
 The mock has no account API, so `scripts/developer-path-mock.js` adds register and login routes
-that mint mock user tokens, mints export tokens, and stands in for Services' release API and AI's
-`/v1/chat/completions`; it hands the mock the contract's public capabilities, as Network reads them. Every
+that mint mock user tokens, mints export tokens, and stands in for Services' release API, AI's
+`/v1/chat/completions` and Play's title, score, unlock and board routes (with its sandbox rules); it hands the mock the contract's public capabilities, as Network reads them. Every
 other step is the platform mock's own.
 
 **Against production** it runs only when a person starts it. Credentials come from the
@@ -198,7 +200,7 @@ It refuses to start without credentials, and refuses in CI against the productio
 set and `OV_NETWORK_URL` unset or `https://openvibe.network`), so it can later run in CI against
 an integration environment but never against production by accident. It masks every password,
 secret and token in its output and prints signed URLs without their signature. Exit `0` when all
-twelve steps passed, `1` when one failed, `2` when it refused to start.
+thirteen steps passed, `1` when one failed, `2` when it refused to start.
 
 It does not yet cover webhook delivery to an external endpoint (that needs a public https host)
 or publishing an app release in OpenVibe.Services.

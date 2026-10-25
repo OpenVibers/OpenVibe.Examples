@@ -11,13 +11,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
-const EXPECTED = ['ai-chat', 'browser-app', 'chat-bot', 'event-subscriber', 'go-live', 'inventory-wear', 'media-uploader', 'mod-manifest', 'node-server-app', 'oauth-app', 'space-deploy', 'tool-job', 'webhook-consumer', 'zone-s3'];
+const EXPECTED = ['ai-chat', 'browser-app', 'chat-bot', 'event-subscriber', 'game-scores', 'go-live', 'inventory-wear', 'media-uploader', 'mod-manifest', 'node-server-app', 'oauth-app', 'space-deploy', 'tool-job', 'webhook-consumer', 'zone-s3'];
 // The pin every example must share: the repository's own (the pin bot moves them all at once).
 const ROOT_PKG = require(path.join(ROOT, 'package.json'));
 const SDK = (ROOT_PKG.dependencies || {})['openvibe-sdk'] || (ROOT_PKG.devDependencies || {})['openvibe-sdk'];
 
 const dirs = fs.readdirSync(path.join(ROOT, 'examples')).filter((d) => fs.statSync(path.join(ROOT, 'examples', d)).isDirectory()).sort();
-assert.deepEqual(dirs, EXPECTED, 'the nine charter examples, ai-chat, go-live, inventory-wear, space-deploy and zone-s3');
+assert.deepEqual(dirs, EXPECTED, 'the nine charter examples, ai-chat, game-scores, go-live, inventory-wear, space-deploy and zone-s3');
 
 function sources(dir) {
     const out = [];

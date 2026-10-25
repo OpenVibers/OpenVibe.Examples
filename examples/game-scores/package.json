@@ -1,0 +1,18 @@
+{
+  "name": "openvibe-example-game-scores",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Achievements and a leaderboard for your game on OpenVibe.Play, from a sandbox app: register a title, post a round, unlock, read the public board, delete it.",
+  "license": "MIT",
+  "main": "scores.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env scores.js",
+    "test": "node test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.65.0"
+  }
+}
