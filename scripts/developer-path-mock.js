@@ -15,11 +15,14 @@
  * draft → published → deprecated → revoked, and the public list shows every release but drafts, like Services.
  * And it stands in for OpenVibe.AI's OpenAI-compatible endpoint (the ai step): an app token for openvibe.ai carrying
  * ai.app.run gets a chat.completion with x_openvibe, in OpenAI's shapes, errors included.
+ * And for OpenVibe.Play (the play step): a sandbox app's token for openvibe.play registers sandbox- titles only, posts
+ * guests' rounds (a repeated ref records nothing) and unlocks, reads the public board without a token, and deletes its
+ * title, with Play's problem codes (Play#41/#42).
  * Everything else is the platform mock's own.
  */
 const { createMockPlatform } = require('openvibe-sdk/testing');
 const contracts = require('openvibe-contracts');
-const { runDeveloperPath, PRODUCTION_NETWORK, PRODUCTION_SERVICES, PRODUCTION_AI } = require('./developer-path');
+const { runDeveloperPath, PRODUCTION_NETWORK, PRODUCTION_SERVICES, PRODUCTION_AI, PRODUCTION_PLAY } = require('./developer-path');
 
 function withAccounts(platform, network = PRODUCTION_NETWORK) {
     const byName = new Map();
@@ -73,6 +76,48 @@ function withAccounts(platform, network = PRODUCTION_NETWORK) {
         });
     }
 
+    const titles = new Map();
+    async function play(url, method, init) {
+        const problem = (status, code, detail) => new Response(JSON.stringify({ type: 'about:blank', title: code, status, code, detail }), { status, headers: { 'Content-Type': 'application/problem+json' } });
+        const m = url.pathname.match(/^\/api\/v1\/titles\/([a-z0-9-]+)(?:\/(scores|unlocks|boards\/([a-z0-9_-]+)))?$/);
+        if (!m) return problem(404, 'route.not_found', 'no such route');
+        const [, id, what, board] = m;
+        const t = titles.get(id);
+        if (method === 'GET' && board) {
+            if (!t) return problem(404, 'play.unknown_board', 'no such board');
+            const entries = [...t.scores].sort((a, b) => b.score - a.score).map((e, i) => ({ rank: i + 1, name: e.name, score: e.score, signed_in: e.player.startsWith('usr_') }));
+            return reply(200, { title: id, title_name: t.name, board, name: 'High score', kind: 'best', period: url.searchParams.get('period') || 'all', page: 1, pages: 1, total: entries.length, entries });
+        }
+        const claims = claimsOf(new Headers(init.headers || {}).get('authorization'));
+        if (!claims) return problem(401, 'token.required', 'a token for openvibe.play');
+        const need = method === 'PUT' || method === 'DELETE' ? 'play.title.manage' : 'play.result.write';
+        if (!(claims.aud || []).includes('openvibe.play') || !(claims.cap || []).includes(need)) return problem(403, 'capability.denied', `${need} is required`);
+        const sandbox = claims.env === 'sandbox';
+        if (method === 'PUT' && !what) {
+            if (sandbox !== id.startsWith('sandbox-')) return problem(400, 'play.sandbox_title', sandbox ? 'a sandbox app\'s title id starts with sandbox-' : 'sandbox- ids are for sandbox apps');
+            if (t && t.owner !== claims.sub) return problem(409, 'play.title_taken', 'another principal manages this title');
+            const body = JSON.parse(init.body || '{}');
+            titles.set(id, { owner: claims.sub, name: body.name, rounds: new Set(), scores: [], unlocked: new Set(), ...(t || {}) });
+            return reply(t ? 200 : 201, { title: { id, name: body.name, ...(sandbox ? { sandbox: true } : {}), achievements: body.achievements || [], boards: body.boards || [] }, created: !t });
+        }
+        if (!t || t.owner !== claims.sub) return problem(404, 'play.unknown_title', 'no such title of yours');
+        if (method === 'DELETE' && !what) { titles.delete(id); return new Response(null, { status: 204 }); }
+        const body = JSON.parse(init.body || '{}');
+        if (what === 'scores') {
+            if (id.startsWith('sandbox-') && body.entries.some((e) => !String(e.player).startsWith('guest:'))) return problem(400, 'play.sandbox_guests_only', 'a sandbox title\'s players are guests');
+            if (t.rounds.has(body.ref)) return reply(200, { recorded: 0, repeated: body.entries.length });
+            t.rounds.add(body.ref);
+            t.scores.push(...body.entries);
+            return reply(200, { recorded: body.entries.length, repeated: 0 });
+        }
+        if (what === 'unlocks') {
+            const fresh = body.achievements.filter((a) => !t.unlocked.has(a));
+            fresh.forEach((a) => t.unlocked.add(a));
+            return reply(200, { unlocked: fresh });
+        }
+        return problem(404, 'route.not_found', 'no such route');
+    }
+
     return async (input, init = {}) => {
         const url = new URL(typeof input === 'string' ? input : input.url);
         const method = (init.method || (typeof input === 'string' ? 'GET' : input.method) || 'GET').toUpperCase();
@@ -100,6 +145,7 @@ function withAccounts(platform, network = PRODUCTION_NETWORK) {
         }
         if (url.origin === PRODUCTION_SERVICES) return services(url, method, init);
         if (url.origin === PRODUCTION_AI) return ai(url, method, init);
+        if (url.origin === PRODUCTION_PLAY) return play(url, method, init);
         return platform.fetch(input, init);
     };
 }
