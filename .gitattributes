@@ -1,0 +1,5 @@
+# One line ending on every OS (Windows checkouts are CRLF otherwise; the SDK found it on 2026-10-27).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
