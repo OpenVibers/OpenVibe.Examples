@@ -311,7 +311,7 @@ test/public-surface.test.js, test/structure.test.js
 
 ## Depends on
 
-- OpenVibe.SDK (v0.60.0), OpenVibe.Contracts (v0.209.0, mod manifest only)
+- OpenVibe.SDK (v0.65.0), OpenVibe.Contracts (v0.214.0, mod manifest only)
 - at run time against the real platform: Network (tokens, registry, developer projects), Events,
   Media, Tools, Chat (on openvibe.live)
 
