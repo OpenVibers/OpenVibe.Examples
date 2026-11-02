@@ -5,7 +5,7 @@
   "wave": "W20",
   "version": "0.3.0",
   "contracts": "openvibe-contracts v0.222.0 (mod-manifest example)",
-  "sdk": "openvibe-sdk v0.81.0",
+  "sdk": "openvibe-sdk v0.82.0",
   "deployed": false,
   "deployment": "none: a repository with CI, not a runtime and not a published package",
   "features": [
