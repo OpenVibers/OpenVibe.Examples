@@ -1,29 +1,17 @@
 'use strict';
 /**
- * Smoke test: the shop against a local Billing stand-in, never the network.
- *
- * The stand-in for openvibe-sdk/vibes speaks the same wire contract (charges.create POSTs with the
- * app token and the reference as Idempotency-Key) and verifies the same X-OpenVibe-Signature-V2, so
- * the example runs before openvibe-sdk v0.84.0 and openvibe-shared 4.111.0 are released. Once those
- * tags exist, package.json pins the SDK and the page loads the released shared/vibes-pay.js.
+ * Smoke test: the shop against a local Billing stand-in, never the network. It uses the released
+ * openvibe-sdk/vibes client for the charge and the webhook check, and the pinned
+ * openvibe-shared v4.111.0 vibes-pay.js served by the shop. Only Billing is a stand-in.
  */
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const http = require('node:http');
+const { createVibesClient } = require('openvibe-sdk/vibes');
 const { loadConfig, createShop } = require('../server');
-
-globalThis.fetch = globalThis.fetch;   // the local stand-ins are the only network this test touches
 
 const hmac = (secret, text) => crypto.createHmac('sha256', String(secret)).update(text).digest('hex');
 const sign = (body, secret) => { const t = Math.floor(Date.now() / 1000); return `t=${t},v2=${hmac(secret, `${t}.${body}`)}`; };
-function verifyWebhook(raw, header, secret) {
-    const m = String(header || '').match(/^t=(\d{1,12}),v2=([0-9a-f]{64})$/i);
-    if (!m) return false;
-    const t = Number(m[1]);
-    if (Math.abs(Date.now() / 1000 - t) > 300) return false;
-    const expected = hmac(secret, `${t}.${Buffer.from(raw).toString('utf8')}`);
-    return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(m[2].toLowerCase(), 'hex'));
-}
 
 function readBody(req) {
     return new Promise((resolve) => { const c = []; req.on('data', (x) => c.push(x)); req.on('end', () => resolve(Buffer.concat(c))); });
@@ -52,21 +40,8 @@ const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'a
     await new Promise((r) => billing.listen(0, '127.0.0.1', r));
     const billingUrl = `http://127.0.0.1:${billing.address().port}`;
 
-    // The SDK stand-in: the same calls over the wire, and the same webhook check.
-    const vibes = {
-        charges: {
-            async create(input) {
-                const res = await fetch(`${billingUrl}/api/v1/vibes/charges`, {
-                    method: 'POST',
-                    headers: { Authorization: 'Bearer app-token', 'Content-Type': 'application/json', 'Idempotency-Key': input.reference },
-                    body: JSON.stringify(input),
-                });
-                if (!res.ok) throw new Error(`Billing ${res.status}`);
-                return await res.json();
-            },
-        },
-        webhooks: { verify: verifyWebhook },
-    };
+    // The released client, pointed at the local Billing stand-in.
+    const vibes = createVibesClient({ appToken: 'app-token', billingUrl });
 
     const config = loadConfig({
         OV_APP_TOKEN: 'app-token',
@@ -86,7 +61,10 @@ const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'a
         const pageRes = await fetch(`${base}/`);
         assert.equal(pageRes.status, 200);
         const page = await pageRes.text();
-        assert.match(page, /<script src="https:\/\/openvibe\.network\/shared\/vibes-pay\.js" defer><\/script>/);
+        assert.match(page, /<script src="\/vibes-pay\.js" defer><\/script>/);
+        const shared = await (await fetch(`${base}/vibes-pay.js`)).text();
+        assert.match(shared, /OpenVibe\.vibes/);
+        assert.match(shared, /ov-vibes-pay/);
         const payUrl = page.match(/<button[^>]*data-ov-vibes-pay="([^"]+)"/)[1];
         assert.match(payUrl, /^https:\/\/openvibe\.network\/pay\/vch_/);
         const reference = page.match(/<main data-order="([^"]+)"/)[1];

@@ -27,6 +27,7 @@ const PUBLIC = path.join(__dirname, 'public');
 const INDEX = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
 const THANKS = fs.readFileSync(path.join(PUBLIC, 'thanks.html'), 'utf8');
 const CSS = fs.readFileSync(path.join(PUBLIC, 'shop.css'), 'utf8');
+const VIBES_PAY = fs.readFileSync(require.resolve('openvibe-shared/vibes-pay'), 'utf8');
 const MAX_BODY = 64 * 1024;
 
 function loadConfig(env = process.env) {
@@ -88,8 +89,8 @@ function send(res, status, body, type = 'application/json; charset=utf-8') {
 }
 
 /**
- * Build the shop. `vibes` is the openvibe-sdk/vibes client in production and a stand-in in the smoke
- * test; it must have charges.create/get/refund and webhooks.verify.
+ * Build the shop. `vibes` is the openvibe-sdk/vibes client; the smoke test passes the released client
+ * pointed at a local Billing stand-in. It must have charges.create/get/refund and webhooks.verify.
  */
 function createShop({ config, vibes, logger = console, now = Date.now }) {
     if (!config || !vibes) throw new TypeError('createShop: config and vibes are required');
@@ -169,6 +170,9 @@ function createShop({ config, vibes, logger = console, now = Date.now }) {
             }
             if (req.method === 'GET' && url.pathname === '/shop.css') {
                 return send(res, 200, CSS, 'text/css; charset=utf-8');
+            }
+            if (req.method === 'GET' && url.pathname === '/vibes-pay.js') {
+                return send(res, 200, VIBES_PAY, 'text/javascript; charset=utf-8');
             }
             if (req.method === 'POST' && url.pathname === '/api/orders') {
                 const order = await createOrder();
