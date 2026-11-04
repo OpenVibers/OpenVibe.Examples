@@ -1,0 +1,19 @@
+{
+  "name": "openvibe-example-ai-anthropic",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI with the Anthropic SDK: the official @anthropic-ai/sdk client pointed at ai.openvibe.services (POST /v1/messages), with a Network app token.",
+  "license": "MIT",
+  "main": "ask.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env ask.js",
+    "test": "node test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.4.0",
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.82.0"
+  }
+}

@@ -11,7 +11,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
-const EXPECTED = ['ai-chat', 'browser-app', 'chat-bot', 'event-subscriber', 'game-scores', 'go-live', 'inventory-wear', 'media-uploader', 'mod-manifest', 'node-server-app', 'oauth-app', 'space-deploy', 'tool-job', 'webhook-consumer', 'zone-s3'];
+const EXPECTED = ['ai-anthropic', 'ai-chat', 'ai-python', 'browser-app', 'chat-bot', 'event-subscriber', 'game-scores', 'go-live', 'inventory-wear', 'media-uploader', 'mod-manifest', 'node-server-app', 'oauth-app', 'space-deploy', 'tool-job', 'webhook-consumer', 'zone-s3'];
 // The pin every example must share: the repository's own (the pin bot moves them all at once).
 const ROOT_PKG = require(path.join(ROOT, 'package.json'));
 const SDK = (ROOT_PKG.dependencies || {})['openvibe-sdk'] || (ROOT_PKG.devDependencies || {})['openvibe-sdk'];
