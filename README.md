@@ -41,6 +41,8 @@ Each example is small, runs on its own and proves one thing with a smoke test.
 | [space-deploy](examples/space-deploy) | Deploy a static site to OpenVibe.Space from CI with an app token (space.deploy.create, deployer role): the built folder as one deploy, live on main or a preview for a pull request, a refusal that changes nothing, rollback; a ready GitHub Actions workflow | `openvibe-sdk/space` (`deploys.uploadFiles`, `rollback`), `/auth` |
 | [zone-s3](examples/zone-s3) | OpenVibe.Zone's private buckets over S3 with the official AWS SDK v3: put, get, a paged list, a presigned share link (at most 7 days) and delete; path-style, us-east-1, SigV4, an access key scoped to the zone | `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` |
 | [ai-chat](examples/ai-chat) | The official `openai` npm client on `https://ai.openvibe.services/v1` with a Network app token: plain and streamed Chat Completions, `x_openvibe` run info, the project's own provider by secret name | `openai` (`baseURL`, `apiKey` as a token function), `openvibe-sdk/auth` |
+| [ai-anthropic](examples/ai-anthropic) | The official `@anthropic-ai/sdk` client on `https://ai.openvibe.services` (POST /v1/messages) with a Network app token through the SDK's `credentials`: the answer names the model that ran and carries `x_openvibe`. |
+| [ai-python](examples/ai-python) | The official `openai` Python client on `https://ai.openvibe.services/v1`, with a Network app token from client credentials kept and renewed a minute early. |
 
 Each example folder has a README, a `.env.example`, its own `package.json` and a
 `test/smoke.test.js`. Configuration is environment variables only (`OV_CLIENT_ID`,
@@ -129,6 +131,8 @@ at the root one: `node --env-file=../../.env upload.js ./logo.png`.
 | [chat-bot](examples/chat-bot) | none: a Live API token (`hbt_…`) of a dedicated bot account | Live token scope `chat` | `OV_CHAT_TOKEN`, one of `OV_CHAT_CHANNEL_USER_ID` / `OV_CHAT_STREAM_ID` |
 | [mod-manifest](examples/mod-manifest) | none | none | `OV_NETWORK_URL` for `--registry` |
 | [ai-chat](examples/ai-chat) | confidential | `ai.app.run` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, optional `OV_AI_URL`; own provider: `OV_PROVIDER_SECRET` (a secret's name), `OV_PROVIDER_BASE_URL`, `OV_PROVIDER_MODEL` |
+| [ai-anthropic](examples/ai-anthropic) | confidential | `ai.app.run` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, optional `OV_MODEL`, `OV_NETWORK_URL`, `OV_AI_URL` |
+| [ai-python](examples/ai-python) | confidential | `ai.app.run` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, optional `OV_MODEL`, `OV_NETWORK_URL`, `OV_AI_URL` |
 
 Rotate a secret in the portal or with `projects.credentials.rotate()`, revoke the app with
 `projects.apps.revoke()`. Issued tokens end within their 5-minute lifetime.

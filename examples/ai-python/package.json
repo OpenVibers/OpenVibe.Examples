@@ -1,0 +1,13 @@
+{
+  "name": "openvibe-example-ai-python",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI from Python: the official openai Python client pointed at ai.openvibe.services/v1, with a Network app token from client credentials.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
