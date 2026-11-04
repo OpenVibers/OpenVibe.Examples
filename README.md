@@ -3,7 +3,7 @@
 > Executable public integration examples for the OpenVibe platform: the SDK, scoped credentials
 > and public APIs, nothing else.
 
-**Status:** alpha, 0.3.0 (roadmap Wave 20; the `create-openvibe-app` scaffolder, WS-N task 6). Fifteen examples, each with a smoke test that CI runs on
+**Status:** alpha, 0.3.0 (roadmap Wave 20; the `create-openvibe-app` scaffolder, WS-N task 6). Eighteen examples, each with a smoke test that CI runs on
 Node 22.22.1 against `openvibe-sdk/testing`'s mock platform (no network). `npm run e2e` runs three
 of them (Media, Events pull, a Tools job) against the real platform with your own sandbox app; it
 is not part of CI or `npm test`, and it was not run against production as part of this release.
@@ -42,6 +42,7 @@ Each example is small, runs on its own and proves one thing with a smoke test.
 | [zone-s3](examples/zone-s3) | OpenVibe.Zone's private buckets over S3 with the official AWS SDK v3: put, get, a paged list, a presigned share link (at most 7 days) and delete; path-style, us-east-1, SigV4, an access key scoped to the zone | `@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner` |
 | [ai-chat](examples/ai-chat) | The official `openai` npm client on `https://ai.openvibe.services/v1` with a Network app token: plain and streamed Chat Completions, `x_openvibe` run info, the project's own provider by secret name | `openai` (`baseURL`, `apiKey` as a token function), `openvibe-sdk/auth` |
 | [ai-anthropic](examples/ai-anthropic) | The official `@anthropic-ai/sdk` client on `https://ai.openvibe.services` (POST /v1/messages) with a Network app token through the SDK's `credentials`: the answer names the model that ran and carries `x_openvibe`. |
+| [vibes-pay](examples/vibes-pay) | Sell a sticker pack for Vibes: the server creates a charge with the SDK (the order id is the idempotency key), the page opens the pay sheet with `vibes-pay.js`, and a signed webhook marks the order paid once. | `openvibe-sdk/vibes` (`charges.create`, `webhooks.verify`), `openvibe-shared/vibes-pay.js` (`OpenVibe.vibes.pay`, `[data-ov-vibes-pay]`) |
 | [ai-python](examples/ai-python) | The official `openai` Python client on `https://ai.openvibe.services/v1`, with a Network app token from client credentials kept and renewed a minute early. |
 
 Each example folder has a README, a `.env.example`, its own `package.json` and a
@@ -132,6 +133,7 @@ at the root one: `node --env-file=../../.env upload.js ./logo.png`.
 | [mod-manifest](examples/mod-manifest) | none | none | `OV_NETWORK_URL` for `--registry` |
 | [ai-chat](examples/ai-chat) | confidential | `ai.app.run` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, optional `OV_AI_URL`; own provider: `OV_PROVIDER_SECRET` (a secret's name), `OV_PROVIDER_BASE_URL`, `OV_PROVIDER_MODEL` |
 | [ai-anthropic](examples/ai-anthropic) | confidential | `ai.app.run` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, optional `OV_MODEL`, `OV_NETWORK_URL`, `OV_AI_URL` |
+| [vibes-pay](examples/vibes-pay) | confidential | `billing.vibes.charge` | `OV_APP_TOKEN`, `OV_VIBES_WEBHOOK_SECRET`, `OV_BILLING_URL`, `OV_PUBLIC_URL`, `OV_ITEM_NAME`, `OV_PRICE_VIBES`, `OV_PORT` |
 | [ai-python](examples/ai-python) | confidential | `ai.app.run` | `OV_CLIENT_ID`, `OV_CLIENT_SECRET`, optional `OV_MODEL`, `OV_NETWORK_URL`, `OV_AI_URL` |
 
 Rotate a secret in the portal or with `projects.credentials.rotate()`, revoke the app with

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Thanks — Vibes Pay shop</title>
+  <link rel="stylesheet" href="/shop.css">
+</head>
+<body>
+<main>
+  <p class="eyebrow">Vibes Pay shop</p>
+  <h1 id="thanks-title">Thanks for the Vibes</h1>
+  <p class="lede" id="thanks-text">This is the return page. The shop will show the sticker pack as paid once the signed webhook confirms it.</p>
+  <p><a href="/">Back to the shop</a></p>
+</main>
+<script>
+  (function () {
+    var order = new URLSearchParams(location.search).get('order');
+    if (!order) return;
+    var title = document.getElementById('thanks-title');
+    var text = document.getElementById('thanks-text');
+    fetch('/api/orders/' + encodeURIComponent(order)).then(function (r) { return r.ok ? r.json() : null; }).then(function (o) {
+      if (!o) return;
+      if (o.status === 'paid') { title.textContent = 'Paid — the sticker pack is yours.'; text.textContent = 'The webhook confirmed order ' + o.reference + '.'; }
+      else if (o.status === 'refunded') { title.textContent = 'Refunded.'; text.textContent = 'The Vibes went back to your wallet.'; }
+      else { title.textContent = 'Waiting for the payment…'; }
+    }).catch(function () {});
+  }());
+</script>
+</body>
+</html>
