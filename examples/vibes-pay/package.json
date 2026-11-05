@@ -1,0 +1,19 @@
+{
+  "name": "openvibe-example-vibes-pay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vibes Pay: a tiny sticker shop that creates a charge with openvibe-sdk/vibes, opens the pay sheet with vibes-pay.js, and marks the order paid from a signed webhook.",
+  "license": "MIT",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "test": "node test/smoke.test.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "openvibe-sdk": "https://codeload.github.com/OpenVibers/OpenVibe.SDK/tar.gz/refs/tags/v0.84.0",
+    "openvibe-shared": "https://codeload.github.com/OpenVibers/OpenVibe.Shared/tar.gz/refs/tags/v4.111.0"
+  }
+}

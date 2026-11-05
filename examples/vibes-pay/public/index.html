@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>{{item}} — Vibes Pay shop</title>
+  <link rel="stylesheet" href="/shop.css">
+  <script src="/vibes-pay.js" defer></script>
+</head>
+<body>
+<main data-order="{{reference}}">
+  <p class="eyebrow">Vibes Pay shop</p>
+  <h1>{{item}}</h1>
+  <p class="lede">A tiny shop on OpenVibe. Pay once with Vibes; the webhook marks the order paid.</p>
+  <div class="sticker">
+    <div class="art" aria-hidden="true"></div>
+    <div><strong>{{item}}</strong><span class="price">{{price}} Vibes</span></div>
+  </div>
+  <div class="pay">
+    <button type="button" data-ov-vibes-pay="{{pay_url}}">Pay with Vibes</button>
+    <noscript><a href="{{pay_url}}">Pay with Vibes</a></noscript>
+  </div>
+  <p id="status" role="status" aria-live="polite"></p>
+  <p class="hint">You pay on OpenVibe's sheet with Vibes you already have. The sticker pack is delivered when the
+  signed webhook says the charge is paid. This page is an example; no real stickers are shipped.</p>
+</main>
+<script>
+  (function () {
+    var main = document.querySelector('main');
+    var order = main && main.getAttribute('data-order');
+    var status = document.getElementById('status');
+    if (!order || !status) return;
+
+    function show(text, kind) { status.textContent = text; status.className = kind || ''; }
+
+    async function check() {
+      try {
+        var res = await fetch('/api/orders/' + encodeURIComponent(order));
+        if (!res.ok) return;
+        var orderState = await res.json();
+        if (orderState.status === 'paid') show('Paid — the sticker pack is yours.', 'paid');
+        else if (orderState.status === 'refunded') show('Refunded to your Vibes.', '');
+        else show('Waiting for the payment…');
+      } catch (e) { show('Could not reach the shop. Try again.', 'error'); }
+    }
+
+    document.addEventListener('ov-vibes-pay', function (event) {
+      if (event.detail && event.detail.status === 'paid') {
+        show('Paid — the sticker pack is yours.', 'paid');
+        check();
+      } else if (event.detail && event.detail.status === 'closed') {
+        show('The sheet was closed. Nothing was charged.');
+      }
+    });
+    check();
+  }());
+</script>
+</body>
+</html>
