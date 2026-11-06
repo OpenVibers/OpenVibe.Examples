@@ -52,7 +52,7 @@ plain-HTTP flow, signatures, limits and payouts.
 
 `package.json` pins the two releases this example uses:
 
-- `openvibe-sdk`: **v0.84.0** (`openvibe-sdk/vibes`).
+- `openvibe-sdk`: **v0.91.0** (`openvibe-sdk/vibes`).
 - `openvibe-shared`: **v4.111.0** (`vibes-pay.js`, served by `server.js` at `/vibes-pay.js`).
 
 `npm install` fetches both from their release tags; no branch tarball is used.
