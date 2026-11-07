@@ -6,7 +6,7 @@
   "version": "0.3.0",
   "contracts": "openvibe-contracts v0.312.0 (mod-manifest example)",
   "sdk": "openvibe-sdk v0.94.0",
-  "shared": "openvibe-shared v4.124.0",
+  "shared": "openvibe-shared v4.126.0",
   "deployed": false,
   "deployment": "none: a repository with CI, not a runtime and not a published package",
   "features": [
