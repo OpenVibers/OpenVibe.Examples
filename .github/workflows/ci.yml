@@ -33,4 +33,4 @@ jobs:
           OV_ALLOW_SUITE: '1'
       - run: npm run developer-path:mock
   security:
-    uses: OpenVibers/OpenVibe.Shared/.github/workflows/security.yml@e80c595ff3d4bc46b7e0f41fdb040b985cb30
+    uses: OpenVibers/OpenVibe.Shared/.github/workflows/security.yml@e80c595ff3d4bc46b7e0f41fdb040b985885cb30
