@@ -3,6 +3,9 @@
 > Executable public integration examples for the OpenVibe platform: the SDK, scoped credentials
 > and public APIs, nothing else.
 
+**Docs:** https://openvibe.services · **For AI:** https://openvibe.services/llms.txt
+**Install and test:** `npm ci && npm test` (Node 22 or newer)
+
 **Status:** alpha, 0.3.0 (roadmap Wave 20; the `create-openvibe-app` scaffolder, WS-N task 6). Eighteen examples, each with a smoke test that CI runs on
 Node 22.22.1 against `openvibe-sdk/testing`'s mock platform (no network). `npm run e2e` runs three
 of them (Media, Events pull, a Tools job) against the real platform with your own sandbox app; it
