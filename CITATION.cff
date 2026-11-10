@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use OpenVibe.Examples in research or a product, cite it as below."
+title: openvibe-examples
+type: software
+authors:
+  - name: OpenVibe
+    alias: OpenVibers
+    website: https://openvibe.network
+repository-code: https://github.com/OpenVibers/OpenVibe.Examples
+url: https://openvibe.services
+license: MIT
+abstract: "Executable, CI-tested examples for building on the OpenVibe platform: auth, APIs, webhooks and the SDK."
+keywords:
+  - openvibe
+  - api
+  - examples
+  - javascript
+  - oauth
