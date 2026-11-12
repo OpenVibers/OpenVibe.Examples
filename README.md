@@ -12,7 +12,7 @@ of them (Media, Events pull, a Tools job) against the real platform with your ow
 is not part of CI or `npm test`, and it was not run against production as part of this release.
 `npm run developer-path` is the Wave 20 exit check (account to Media, Events and AI to revoked
 credentials); CI runs it against the mock platform, and OpenVibe.Host runs it against production daily.  
-**Built on:** [openvibe-sdk v0.150.0](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.91.0), and
+**Built on:** [openvibe-sdk v0.160.0](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.91.0), and
 openvibe-contracts v0.416.0 for the mod manifest.  
 **Plan:** OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §15.1
 and §18.9; roadmap Wave 20, §30 (public SDK surface), ADR-014 (developer projects).  
@@ -372,6 +372,6 @@ Part of the [OpenVibe network](https://openvibe.network). Built in the open by [
 
 <!-- versions:start -->
 - openvibe-contracts: v0.416.0
-- openvibe-sdk: v0.150.0
+- openvibe-sdk: v0.160.0
 - openvibe-shared: v4.223.1
 <!-- versions:end -->
