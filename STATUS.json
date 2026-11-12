@@ -4,7 +4,7 @@
   "code": true,
   "wave": "W20",
   "version": "0.3.0",
-  "contracts": "openvibe-contracts v0.416.0 (mod-manifest example)",
+  "contracts": "openvibe-contracts v0.417.0 (mod-manifest example)",
   "sdk": "openvibe-sdk v0.160.0",
   "shared": "openvibe-shared v4.225.0",
   "deployed": false,
