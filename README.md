@@ -13,7 +13,7 @@ is not part of CI or `npm test`, and it was not run against production as part o
 `npm run developer-path` is the Wave 20 exit check (account to Media, Events and AI to revoked
 credentials); CI runs it against the mock platform, and OpenVibe.Host runs it against production daily.  
 **Built on:** [openvibe-sdk v0.150.0](https://github.com/OpenVibers/OpenVibe.SDK/tree/v0.91.0), and
-openvibe-contracts v0.408.0 for the mod manifest.  
+openvibe-contracts v0.410.0 for the mod manifest.  
 **Plan:** OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §15.1
 and §18.9; roadmap Wave 20, §30 (public SDK surface), ADR-014 (developer projects).  
 **License:** MIT ([LICENSE](LICENSE)), so you can copy any example into your own project. The
@@ -371,7 +371,7 @@ own app.
 Part of the [OpenVibe network](https://openvibe.network). Built in the open by [OpenVibers](https://github.com/OpenVibers).
 
 <!-- versions:start -->
-- openvibe-contracts: v0.408.0
+- openvibe-contracts: v0.410.0
 - openvibe-sdk: v0.150.0
 - openvibe-shared: v4.214.0
 <!-- versions:end -->
