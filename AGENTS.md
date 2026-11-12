@@ -98,8 +98,8 @@ throws, so an accidental network call fails the test.
 
 ## Pitfalls
 
-- **A first-party shortcut invalidates the example.** If it needs `x-internal-key`, a loopback URL, a
-  database or a service token, it is not an example of the public platform.
+- **A first-party shortcut invalidates the example.** If it needs an internal first-party key header, a
+  loopback URL, a database or a service token, it is not an example of the public platform.
 - **Production apps need staff in some cases:** switching a project to `sandbox+production` and setting
   its allowance is an operator step; a sandbox app cannot do it.
 - **Chat has no app principal yet.** `chat.message.send` is first-party, so `chat-bot` uses a dedicated
