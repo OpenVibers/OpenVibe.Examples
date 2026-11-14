@@ -5,7 +5,7 @@
   "wave": "W20",
   "version": "0.3.0",
   "contracts": "openvibe-contracts v0.419.0 (mod-manifest example)",
-  "sdk": "openvibe-sdk v0.167.0",
+  "sdk": "openvibe-sdk v0.168.0",
   "shared": "openvibe-shared v4.247.0",
   "deployed": false,
   "deployment": "none: a repository with CI, not a runtime and not a published package",
@@ -29,5 +29,5 @@
     "mod publishing is first-party (games.mod.manage)"
   ],
   "plan": "OpenVibe End-to-End Realignment & Implementation Plan, revision 3 (20 Sep 2026), §15.1, §18.9; roadmap Wave 20, §30, ADR-014",
-  "updated": "2026-11-13"
+  "updated": "2026-11-14"
 }
