@@ -14,6 +14,6 @@
   },
   "dependencies": {
     "openai": "7.42.0",
-    "openvibe-sdk": "https://git.openvibe.codes/api/v1/repos/openvibers/openvibe.sdk/archive/v0.188.0.tar.gz"
+    "openvibe-sdk": "https://git.openvibe.codes/api/v1/repos/openvibers/openvibe.sdk/archive/v0.189.0.tar.gz"
   }
 }
