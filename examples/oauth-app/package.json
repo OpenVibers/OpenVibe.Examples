@@ -13,6 +13,6 @@
     "node": ">=22"
   },
   "dependencies": {
-    "openvibe-sdk": "https://git.openvibe.codes/api/v1/repos/openvibers/openvibe.sdk/archive/v0.189.0.tar.gz"
+    "openvibe-sdk": "https://git.openvibe.codes/api/v1/repos/openvibers/openvibe.sdk/archive/v0.191.0.tar.gz"
   }
 }
